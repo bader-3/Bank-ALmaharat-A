@@ -29,7 +29,8 @@ import { useAuth } from "@/providers/auth-provider";
 import { useWallet } from "@/providers/wallet-provider";
 import { getFavoritesService } from "@/services/favorites";
 import { getInterviewService } from "@/services/interview";
-import { syncUserDataFromCloud } from "@/services/firebase/sync-user-data";
+import { loadLearningProfile } from "@/lib/interview/load-profile";
+import { readSession } from "@/services/auth/mock-storage";
 import { getLearningService } from "@/services/learning";
 import { getNoorService } from "@/services/noor";
 import type { Course } from "@/types/course";
@@ -56,7 +57,6 @@ export function AccountScreen() {
   const { isAuthenticated } = useRequireAuth();
   const { balance, stats, isLoading: walletLoading } = useWallet();
   const userId = user?.id;
-  const interviewCompleted = Boolean(user?.interviewCompleted);
 
   const [tab, setTab] = useState<AccountTab>("overview");
   const [profile, setProfile] = useState<LearningProfile | null>(null);
@@ -75,19 +75,18 @@ export function AccountScreen() {
 
     try {
       const interview = getInterviewService();
-      let userProfile = await interview.getProfile(userId);
+      const userProfile = await loadLearningProfile(userId);
+      const session = readSession();
+      const sessionCompleted = Boolean(
+        session?.user.id === userId && session.user.interviewCompleted,
+      );
 
-      if (!userProfile) {
-        await syncUserDataFromCloud(userId);
-        userProfile = await interview.getProfile(userId);
-      }
-
-      if (!userProfile && !interviewCompleted) {
+      if (!userProfile && !sessionCompleted) {
         router.replace(ROUTES.interview);
         return;
       }
 
-      if (userProfile && !interviewCompleted) {
+      if (userProfile && !sessionCompleted) {
         await interview.syncInterviewCompletion(userId);
         await refreshSession();
       }
@@ -110,12 +109,12 @@ export function AccountScreen() {
       setLoading(false);
       loadInFlightRef.current = false;
     }
-  }, [userId, interviewCompleted, router, refreshSession]);
+  }, [userId, router, refreshSession]);
 
   useEffect(() => {
     if (!userId || isLoading) return;
     void load();
-  }, [userId, isLoading, interviewCompleted, load]);
+  }, [userId, isLoading, load]);
 
   const activeEnrollments = useMemo(
     () => enrollments.filter((e) => e.progress < 100),

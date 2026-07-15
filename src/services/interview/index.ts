@@ -5,11 +5,13 @@ import {
   readInterviewConversation,
   readLearningProfile,
   saveAiLearningProfile,
+  saveAiLearningProfileAsync,
   saveInterviewConversation,
 } from "@/services/interview/mock-profile-storage";
 
 export interface InterviewService {
   saveProfile(profile: LearningProfile): Promise<LearningProfile>;
+  saveProfileAndSync(profile: LearningProfile): Promise<LearningProfile>;
   getProfile(userId: string): Promise<LearningProfile | null>;
   syncInterviewCompletion(userId: string): Promise<boolean>;
   getConversation(userId: string): Promise<InterviewConversation | null>;
@@ -22,6 +24,11 @@ export class MockInterviewService implements InterviewService {
   async saveProfile(profile: LearningProfile): Promise<LearningProfile> {
     await mockWriteDelay(80);
     return saveAiLearningProfile(profile);
+  }
+
+  async saveProfileAndSync(profile: LearningProfile): Promise<LearningProfile> {
+    await mockWriteDelay(80);
+    return saveAiLearningProfileAsync(profile);
   }
 
   async getProfile(userId: string): Promise<LearningProfile | null> {

@@ -3,7 +3,6 @@
 import { ProfileSummary } from "@/components/interview/profile-summary";
 import { LearningPlanCard } from "@/components/ai/learning-plan-card";
 import { InterviewShell } from "@/components/interview/interview-shell";
-import AuthShellLayout from "@/components/layout/auth-shell-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
@@ -128,7 +127,7 @@ export function InterviewChat() {
     try {
       const aiProfile = await generateProfileFromConversation(history);
       const fullProfile = aiProfileToLearningProfile(user.id, aiProfile, history);
-      const saved = await interview.saveProfile(fullProfile);
+      const saved = await interview.saveProfileAndSync(fullProfile);
       await refreshSession();
       setProfile(saved);
       setMessages((prev) => [
@@ -175,9 +174,14 @@ export function InterviewChat() {
     setError("");
 
     try {
+      const savedProfile = await interview.getProfile(user.id);
+      if (!savedProfile) {
+        throw new Error("لم يُحفظ ملفك بعد. انتظر لحظة ثم حاول مرة أخرى.");
+      }
+
       await interview.syncInterviewCompletion(user.id);
       await refreshSession();
-      router.push(ROUTES.account);
+      router.replace(ROUTES.account);
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذّر الانتقال إلى حسابك");
       setNavigating(false);
@@ -186,11 +190,9 @@ export function InterviewChat() {
 
   if (isLoading || !isAuthenticated || !user || hydratedUserId !== user.id) {
     return (
-      <AuthShellLayout>
-        <Container className="flex min-h-screen items-center justify-center py-24">
-          <p className="text-foreground-muted">جاري التحميل…</p>
-        </Container>
-      </AuthShellLayout>
+      <Container className="flex min-h-[60vh] items-center justify-center py-24">
+        <p className="text-foreground-muted">جاري التحميل…</p>
+      </Container>
     );
   }
 
@@ -284,7 +286,7 @@ export function InterviewChat() {
               disabled={navigating}
               onClick={() => void goToAccount()}
             >
-              {navigating ? "جاري التحميل…" : "متابعة إلى لوحة التعلّم"}
+              {navigating ? "جاري التحميل…" : "انتقل إلى حسابي"}
             </Button>
           </div>
         )}

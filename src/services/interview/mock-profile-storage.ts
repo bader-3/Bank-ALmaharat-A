@@ -35,6 +35,10 @@ export function saveAiLearningProfile(profile: LearningProfile): LearningProfile
   return persistProfile({ ...profile, aiGenerated: true });
 }
 
+export async function saveAiLearningProfileAsync(profile: LearningProfile): Promise<LearningProfile> {
+  return persistProfileAsync({ ...profile, aiGenerated: true });
+}
+
 function persistProfile(profile: LearningProfile): LearningProfile {
   const profiles = readProfiles();
   profiles[profile.userId] = profile;
@@ -45,6 +49,23 @@ function persistProfile(profile: LearningProfile): LearningProfile {
       console.error("[Firestore] تعذّر حفظ الملف التعليمي:", error);
     });
   }
+  return profile;
+}
+
+async function persistProfileAsync(profile: LearningProfile): Promise<LearningProfile> {
+  const profiles = readProfiles();
+  profiles[profile.userId] = profile;
+  writeProfiles(profiles);
+  markInterviewCompleted(profile.userId);
+
+  if (isBrowser()) {
+    try {
+      await saveCloudLearningProfile(profile);
+    } catch (error) {
+      console.error("[Firestore] تعذّر حفظ الملف التعليمي:", error);
+    }
+  }
+
   return profile;
 }
 

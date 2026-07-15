@@ -34,8 +34,15 @@ const APP_NAV: Array<{
   href: string;
   label: string;
   icon: NavIcon;
+  showBeforeInterview?: boolean;
 }> = [
   { href: ROUTES.account, label: "حسابي", icon: IconUser },
+  {
+    href: ROUTES.interview,
+    label: "المقابلة الذكية",
+    icon: IconSparkle,
+    showBeforeInterview: true,
+  },
   { href: ROUTES.path, label: "مساري", icon: IconPath },
   { href: ROUTES.goals, label: "أهدافي", icon: IconCheck },
   { href: ROUTES.activity, label: "سجل التعلّم", icon: IconBook },
@@ -68,7 +75,10 @@ export function AppSidebar() {
     };
   }, [mobileOpen]);
 
-  const links = APP_NAV;
+  const links = APP_NAV.filter((item) => {
+    if (item.showBeforeInterview) return !user?.interviewCompleted;
+    return true;
+  });
 
   return (
     <>
