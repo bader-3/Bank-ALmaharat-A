@@ -29,8 +29,6 @@ import { useAuth } from "@/providers/auth-provider";
 import { useWallet } from "@/providers/wallet-provider";
 import { getFavoritesService } from "@/services/favorites";
 import { getInterviewService } from "@/services/interview";
-import { loadLearningProfile } from "@/lib/interview/load-profile";
-import { readSession } from "@/services/auth/mock-storage";
 import { getLearningService } from "@/services/learning";
 import { getNoorService } from "@/services/noor";
 import type { Course } from "@/types/course";
@@ -39,7 +37,7 @@ import type { LearningProfile } from "@/types/interview";
 import type { PlanningSession } from "@/types/noor";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type AccountTab = "overview" | "active" | "completed" | "favorites" | "purchases";
 
@@ -53,7 +51,7 @@ const TABS: { id: AccountTab; label: string }[] = [
 
 export function AccountScreen() {
   const router = useRouter();
-  const { user, isLoading, logout, refreshSession } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const { isAuthenticated } = useRequireAuth();
   const { balance, stats, isLoading: walletLoading } = useWallet();
   const userId = user?.id;
@@ -65,31 +63,14 @@ export function AccountScreen() {
   const [approvedSession, setApprovedSession] = useState<PlanningSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const loadInFlightRef = useRef(false);
 
   const load = useCallback(async () => {
-    if (!userId || loadInFlightRef.current) return;
-    loadInFlightRef.current = true;
+    if (!userId) return;
     setLoading(true);
     setLoadError("");
 
     try {
-      const interview = getInterviewService();
-      const userProfile = await loadLearningProfile(userId);
-      const session = readSession();
-      const sessionCompleted = Boolean(
-        session?.user.id === userId && session.user.interviewCompleted,
-      );
-
-      if (!userProfile && !sessionCompleted) {
-        router.replace(ROUTES.interview);
-        return;
-      }
-
-      if (userProfile && !sessionCompleted) {
-        await interview.syncInterviewCompletion(userId);
-        await refreshSession();
-      }
+      const userProfile = await getInterviewService().getProfile(userId);
 
       const [userEnrollments, favSlugs, planningSession] = await Promise.all([
         getLearningService().getEnrollments(userId),
@@ -107,9 +88,8 @@ export function AccountScreen() {
       setLoadError(error instanceof Error ? error.message : "تعذّر تحميل الحساب");
     } finally {
       setLoading(false);
-      loadInFlightRef.current = false;
     }
-  }, [userId, router, refreshSession]);
+  }, [userId]);
 
   useEffect(() => {
     if (!userId || isLoading) return;
@@ -133,7 +113,7 @@ export function AccountScreen() {
     purchases: [],
   };
 
-  if (isLoading || !isAuthenticated || !user || loading || walletLoading) {
+  if (isLoading || !isAuthenticated || !user || loading) {
     return (
       <Container className="py-24">
         <p className="text-center text-foreground-muted">جاري التحميل…</p>
@@ -159,6 +139,23 @@ export function AccountScreen() {
 
   return (
     <Container className="py-10 lg:py-14">
+      {!user.interviewCompleted && (
+        <Card padding="md" className="mb-8 border-gold-200 bg-gold-50/60">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-gold-800">أكمل ملفك التعليمي</p>
+              <p className="mt-1 text-sm text-foreground-secondary">
+                مقابلة قصيرة مع نور لاقتراح دورات ومدربين يناسبونك.
+              </p>
+            </div>
+            <Button href={ROUTES.interview}>
+              ابدأ المقابلة الذكية
+              <IconArrow />
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gold-100 text-lg font-bold text-gold-700">

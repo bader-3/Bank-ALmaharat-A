@@ -3,6 +3,7 @@
 import { ProfileSummary } from "@/components/interview/profile-summary";
 import { LearningPlanCard } from "@/components/ai/learning-plan-card";
 import { InterviewShell } from "@/components/interview/interview-shell";
+import AuthShellLayout from "@/components/layout/auth-shell-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
@@ -39,6 +40,7 @@ export function InterviewChat() {
   const [isTyping, setIsTyping] = useState(false);
   const [isBuildingProfile, setIsBuildingProfile] = useState(false);
   const [profile, setProfile] = useState<LearningProfile | null>(null);
+  const [pendingProfile, setPendingProfile] = useState<LearningProfile | null>(null);
   const [started, setStarted] = useState(false);
   const [error, setError] = useState("");
   const [navigating, setNavigating] = useState(false);
@@ -57,15 +59,22 @@ export function InterviewChat() {
     void Promise.all([interview.getConversation(user.id), interview.getProfile(user.id)]).then(
       ([conversation, savedProfile]) => {
         if (!active) return;
+
+        if (user.interviewCompleted && savedProfile) {
+          router.replace(ROUTES.account);
+          return;
+        }
+
         if (conversation) {
           setMessages(conversation.messages);
           setAiHistory(conversation.aiHistory);
           setStarted(conversation.started);
         }
-        if (savedProfile) {
-          setProfile(savedProfile);
-          setStarted(true);
+
+        if (savedProfile && !user.interviewCompleted) {
+          setPendingProfile(savedProfile);
         }
+
         setHydratedUserId(user.id);
       },
     );
@@ -73,7 +82,7 @@ export function InterviewChat() {
     return () => {
       active = false;
     };
-  }, [interview, user]);
+  }, [interview, router, user]);
 
   useEffect(() => {
     if (!user || hydratedUserId !== user.id || !started) return;
@@ -128,14 +137,14 @@ export function InterviewChat() {
       const aiProfile = await generateProfileFromConversation(history);
       const fullProfile = aiProfileToLearningProfile(user.id, aiProfile, history);
       const saved = await interview.saveProfileAndSync(fullProfile);
-      await refreshSession();
       setProfile(saved);
+      setPendingProfile(null);
       setMessages((prev) => [
         ...prev,
         {
           id: "ai-profile-done",
           role: "ai",
-          text: "تم بناء ملفك التعليمي! راجع الملخص أدناه ثم تابع إلى لوحتك.",
+          text: "تم بناء ملفك التعليمي! راجع الملخص أدناه ثم انتقل إلى حسابك.",
         },
       ]);
     } catch (err) {
@@ -146,6 +155,10 @@ export function InterviewChat() {
   }
 
   async function startInterview() {
+    setPendingProfile(null);
+    setProfile(null);
+    setMessages([]);
+    setAiHistory([]);
     setStarted(true);
     await sendToAi([{ role: "user", text: "ابدأ المقابلة" }]);
   }
@@ -174,12 +187,13 @@ export function InterviewChat() {
     setError("");
 
     try {
-      const savedProfile = await interview.getProfile(user.id);
+      const savedProfile =
+        profile ?? pendingProfile ?? (await interview.getProfile(user.id));
       if (!savedProfile) {
-        throw new Error("لم يُحفظ ملفك بعد. انتظر لحظة ثم حاول مرة أخرى.");
+        throw new Error("أكمل المقابلة أولًا لبناء ملفك.");
       }
 
-      await interview.syncInterviewCompletion(user.id);
+      await interview.finalizeInterview(user.id);
       await refreshSession();
       router.replace(ROUTES.account);
     } catch (err) {
@@ -190,9 +204,11 @@ export function InterviewChat() {
 
   if (isLoading || !isAuthenticated || !user || hydratedUserId !== user.id) {
     return (
-      <Container className="flex min-h-[60vh] items-center justify-center py-24">
-        <p className="text-foreground-muted">جاري التحميل…</p>
-      </Container>
+      <AuthShellLayout>
+        <Container className="flex min-h-screen items-center justify-center py-24">
+          <p className="text-foreground-muted">جاري التحميل…</p>
+        </Container>
+      </AuthShellLayout>
     );
   }
 
@@ -214,7 +230,24 @@ export function InterviewChat() {
     >
       <div className="flex min-h-[32rem] flex-1 flex-col">
         <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto p-4 sm:p-5">
-          {!started ? (
+          {!started && pendingProfile ? (
+            <div className="flex h-full min-h-[24rem] flex-col items-center justify-center px-4 text-center">
+              <Card variant="tint" padding="md" className="max-w-md text-start">
+                <ProfileSummary profile={pendingProfile} showPlan={false} />
+              </Card>
+              <p className="mt-5 max-w-sm text-sm text-foreground-secondary">
+                لديك ملف محفوظ من مقابلة سابقة. يمكنك متابعة إلى حسابك أو بدء مقابلة جديدة.
+              </p>
+              <div className="mt-6 flex w-full max-w-sm flex-col gap-3">
+                <Button size="lg" fullWidth onClick={() => void goToAccount()} disabled={navigating}>
+                  {navigating ? "جاري التحميل…" : "انتقل إلى حسابي"}
+                </Button>
+                <Button size="lg" fullWidth variant="secondary" onClick={() => void startInterview()}>
+                  بدء مقابلة جديدة
+                </Button>
+              </div>
+            </div>
+          ) : !started ? (
             <div className="flex h-full min-h-[24rem] flex-col items-center justify-center px-4 text-center">
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sage-500/15 text-sage-600">
                 <IconSparkle size={24} />

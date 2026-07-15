@@ -13,7 +13,7 @@ export interface InterviewService {
   saveProfile(profile: LearningProfile): Promise<LearningProfile>;
   saveProfileAndSync(profile: LearningProfile): Promise<LearningProfile>;
   getProfile(userId: string): Promise<LearningProfile | null>;
-  syncInterviewCompletion(userId: string): Promise<boolean>;
+  finalizeInterview(userId: string): Promise<boolean>;
   getConversation(userId: string): Promise<InterviewConversation | null>;
   saveConversation(
     conversation: Omit<InterviewConversation, "updatedAt">,
@@ -35,7 +35,7 @@ export class MockInterviewService implements InterviewService {
     return readLearningProfile(userId);
   }
 
-  async syncInterviewCompletion(userId: string): Promise<boolean> {
+  async finalizeInterview(userId: string): Promise<boolean> {
     const profile = readLearningProfile(userId);
     if (!profile) return false;
 

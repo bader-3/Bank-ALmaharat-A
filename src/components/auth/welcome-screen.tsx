@@ -25,12 +25,6 @@ export function WelcomeScreen() {
   const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
-    if (!isLoading && user?.interviewCompleted) {
-      router.replace(ROUTES.account);
-    }
-  }, [isLoading, user, router]);
-
-  useEffect(() => {
     if (!user) return;
 
     getInterviewService()
