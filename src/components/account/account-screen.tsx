@@ -38,7 +38,7 @@ import type { LearningProfile } from "@/types/interview";
 import type { PlanningSession } from "@/types/noor";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type AccountTab = "overview" | "active" | "completed" | "favorites" | "purchases";
 
@@ -55,6 +55,8 @@ export function AccountScreen() {
   const { user, isLoading, logout, refreshSession } = useAuth();
   const { isAuthenticated } = useRequireAuth();
   const { balance, stats, isLoading: walletLoading } = useWallet();
+  const userId = user?.id;
+  const interviewCompleted = Boolean(user?.interviewCompleted);
 
   const [tab, setTab] = useState<AccountTab>("overview");
   const [profile, setProfile] = useState<LearningProfile | null>(null);
@@ -63,31 +65,37 @@ export function AccountScreen() {
   const [approvedSession, setApprovedSession] = useState<PlanningSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const loadInFlightRef = useRef(false);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!userId || loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     setLoading(true);
     setLoadError("");
 
     try {
       const interview = getInterviewService();
-      await syncUserDataFromCloud(user.id);
-      const userProfile = await interview.getProfile(user.id);
+      let userProfile = await interview.getProfile(userId);
 
-      if (!userProfile && !user.interviewCompleted) {
+      if (!userProfile) {
+        await syncUserDataFromCloud(userId);
+        userProfile = await interview.getProfile(userId);
+      }
+
+      if (!userProfile && !interviewCompleted) {
         router.replace(ROUTES.interview);
         return;
       }
 
-      if (userProfile) {
-        await interview.syncInterviewCompletion(user.id);
+      if (userProfile && !interviewCompleted) {
+        await interview.syncInterviewCompletion(userId);
         await refreshSession();
       }
 
       const [userEnrollments, favSlugs, planningSession] = await Promise.all([
-        getLearningService().getEnrollments(user.id),
-        getFavoritesService().list(user.id),
-        getNoorService().getPlanningSession(user.id),
+        getLearningService().getEnrollments(userId),
+        getFavoritesService().list(userId),
+        getNoorService().getPlanningSession(userId),
       ]);
 
       setProfile(userProfile);
@@ -100,13 +108,14 @@ export function AccountScreen() {
       setLoadError(error instanceof Error ? error.message : "تعذّر تحميل الحساب");
     } finally {
       setLoading(false);
+      loadInFlightRef.current = false;
     }
-  }, [user, router, refreshSession]);
+  }, [userId, interviewCompleted, router, refreshSession]);
 
   useEffect(() => {
-    if (!user || isLoading) return;
+    if (!userId || isLoading) return;
     void load();
-  }, [user, isLoading, load]);
+  }, [userId, isLoading, interviewCompleted, load]);
 
   const activeEnrollments = useMemo(
     () => enrollments.filter((e) => e.progress < 100),

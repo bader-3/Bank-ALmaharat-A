@@ -1,5 +1,5 @@
 import type { InterviewConversation, LearningProfile } from "@/types/interview";
-import { markInterviewCompleted } from "@/services/auth/mock-storage";
+import { markInterviewCompleted, getUserById, readSession } from "@/services/auth/mock-storage";
 import { mockWriteDelay } from "@/lib/mock-delay";
 import {
   readInterviewConversation,
@@ -31,6 +31,13 @@ export class MockInterviewService implements InterviewService {
   async syncInterviewCompletion(userId: string): Promise<boolean> {
     const profile = readLearningProfile(userId);
     if (!profile) return false;
+
+    const storedUser = getUserById(userId);
+    const session = readSession();
+    if (storedUser?.interviewCompleted && session?.user.interviewCompleted) {
+      return true;
+    }
+
     markInterviewCompleted(userId);
     return true;
   }

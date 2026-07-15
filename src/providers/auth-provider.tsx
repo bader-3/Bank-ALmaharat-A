@@ -26,6 +26,21 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function sessionsEqual(a: AuthSession | null, b: AuthSession | null) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+
+  return (
+    a.token === b.token &&
+    a.user.id === b.user.id &&
+    a.user.email === b.user.email &&
+    a.user.fullName === b.user.fullName &&
+    a.user.createdAt === b.user.createdAt &&
+    a.user.provider === b.user.provider &&
+    a.user.interviewCompleted === b.user.interviewCompleted
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     const current = await auth.refreshSession();
-    setSession(current);
+    setSession((prev) => (sessionsEqual(prev, current) ? prev : current));
   }, [auth]);
 
   const register = useCallback(

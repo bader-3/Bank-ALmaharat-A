@@ -95,11 +95,16 @@ export class MockAuthService implements AuthService {
     if (!stored) return null;
 
     const freshUser = getUserById(stored.user.id);
-    const session = freshUser
-      ? { user: freshUser, token: stored.token }
-      : stored;
+    if (!freshUser) {
+      return toSession(stored);
+    }
 
-    if (freshUser) {
+    const interviewCompletedChanged =
+      freshUser.interviewCompleted !== stored.user.interviewCompleted;
+
+    const session = { user: freshUser, token: stored.token };
+
+    if (interviewCompletedChanged) {
       persistSession(session);
     }
 

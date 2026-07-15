@@ -29,6 +29,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const userId = user?.id;
   const wallet = useMemo(() => getWalletService(), []);
   const learning = useMemo(() => getLearningService(), []);
   const [balance, setBalance] = useState(0);
@@ -37,7 +38,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const hasLoadedRef = useRef(false);
 
   const refreshWallet = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setBalance(0);
       setStats(null);
       setIsLoading(false);
@@ -49,23 +50,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
     }
 
-    const enrollments = await learning.getEnrollments(user.id);
+    const enrollments = await learning.getEnrollments(userId);
     const enrolledHours = enrollments.reduce((sum, enrollment) => sum + enrollment.hoursUsed, 0);
-    reconcileWalletWithEnrollments(user.id, enrolledHours);
+    reconcileWalletWithEnrollments(userId, enrolledHours);
 
-    const nextStats = await wallet.getStats(user.id);
+    const nextStats = await wallet.getStats(userId);
     setStats(nextStats);
     setBalance(nextStats.balance);
     setIsLoading(false);
     hasLoadedRef.current = true;
-  }, [user, wallet, learning]);
+  }, [userId, wallet, learning]);
 
   useEffect(() => {
     void refreshWallet();
   }, [refreshWallet]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
 
     function handleWalletChange() {
       void refreshWallet();
@@ -86,23 +87,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("storage", handleWalletChange);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [user, refreshWallet]);
+  }, [userId, refreshWallet]);
 
   const purchasePackage = useCallback(
     async (pkg: HourPackage) => {
-      if (!user) {
+      if (!userId) {
         return { success: false as const, error: "يجب تسجيل الدخول أولًا." };
       }
 
-      const result = await wallet.purchasePackage(user.id, pkg);
+      const result = await wallet.purchasePackage(userId, pkg);
       if (result.success) {
-        const nextStats = await wallet.getStats(user.id);
+        const nextStats = await wallet.getStats(userId);
         setStats(nextStats);
         setBalance(nextStats.balance);
       }
       return result;
     },
-    [user, wallet],
+    [userId, wallet],
   );
 
   const value = useMemo<WalletContextValue>(
