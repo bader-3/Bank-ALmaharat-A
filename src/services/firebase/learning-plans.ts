@@ -19,7 +19,12 @@ function planRef(ownerId: string) {
 export async function getCloudLearningPlan(
   ownerId: string,
 ): Promise<PlanningSession | null> {
-  const snapshot = await getDoc(planRef(ownerId));
+  const snapshot = await Promise.race([
+    getDoc(planRef(ownerId)),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Firestore timeout")), 6_000);
+    }),
+  ]);
   if (!snapshot.exists()) return null;
   return (snapshot.data().session as PlanningSession | undefined) ?? null;
 }

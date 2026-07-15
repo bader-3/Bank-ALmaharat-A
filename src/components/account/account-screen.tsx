@@ -30,7 +30,9 @@ import { useWallet } from "@/providers/wallet-provider";
 import { getFavoritesService } from "@/services/favorites";
 import { getInterviewService } from "@/services/interview";
 import { getLearningService } from "@/services/learning";
+import { readPlanningSession } from "@/services/noor/mock-noor-storage";
 import { getNoorService } from "@/services/noor";
+import { withTimeout } from "@/lib/async/with-timeout";
 import type { Course } from "@/types/course";
 import type { Enrollment } from "@/types/learning";
 import type { LearningProfile } from "@/types/interview";
@@ -70,20 +72,39 @@ export function AccountScreen() {
     setLoadError("");
 
     try {
-      const userProfile = await getInterviewService().getProfile(userId);
+      await withTimeout(
+        (async () => {
+          const userProfile = await getInterviewService().getProfile(userId);
 
-      const [userEnrollments, favSlugs, planningSession] = await Promise.all([
-        getLearningService().getEnrollments(userId),
-        getFavoritesService().list(userId),
-        getNoorService().getPlanningSession(userId),
-      ]);
+          const [userEnrollments, favSlugs] = await Promise.all([
+            getLearningService().getEnrollments(userId),
+            getFavoritesService().list(userId),
+          ]);
 
-      setProfile(userProfile);
-      setEnrollments(userEnrollments);
-      setFavoriteCourses(
-        favSlugs.map((slug) => getCourseBySlug(slug)).filter((c): c is Course => Boolean(c)),
+          // Local read first — avoids Firestore hanging the account page on mobile.
+          let planningSession = readPlanningSession(userId);
+          if (!planningSession) {
+            try {
+              planningSession = await withTimeout(
+                getNoorService().getPlanningSession(userId),
+                4_000,
+                "مزامنة الخطة",
+              );
+            } catch {
+              planningSession = null;
+            }
+          }
+
+          setProfile(userProfile);
+          setEnrollments(userEnrollments);
+          setFavoriteCourses(
+            favSlugs.map((slug) => getCourseBySlug(slug)).filter((c): c is Course => Boolean(c)),
+          );
+          setApprovedSession(planningSession?.status === "accepted" ? planningSession : null);
+        })(),
+        12_000,
+        "تحميل الحساب",
       );
-      setApprovedSession(planningSession?.status === "accepted" ? planningSession : null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "تعذّر تحميل الحساب");
     } finally {
@@ -105,7 +126,13 @@ export function AccountScreen() {
     [enrollments],
   );
 
-  const recommended = getAiRecommendedCourses(profile, 2);
+  const recommended = useMemo(() => {
+    try {
+      return getAiRecommendedCourses(profile, 2);
+    } catch {
+      return [];
+    }
+  }, [profile]);
   const walletStats = stats ?? {
     balance: 0,
     totalPurchased: 0,
@@ -113,21 +140,10 @@ export function AccountScreen() {
     purchases: [],
   };
 
-  if (isLoading || !isAuthenticated || !user || loading) {
+  if (isLoading || !isAuthenticated || !user) {
     return (
       <Container className="py-24">
         <p className="text-center text-foreground-muted">جاري التحميل…</p>
-      </Container>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <Container className="py-24 text-center">
-        <p className="text-sm text-red-700">{loadError}</p>
-        <Button className="mt-4" onClick={() => void load()}>
-          إعادة المحاولة
-        </Button>
       </Container>
     );
   }
@@ -139,6 +155,27 @@ export function AccountScreen() {
 
   return (
     <Container className="py-10 lg:py-14">
+      {loading && (
+        <Card padding="md" className="mb-6 border-sage-200 bg-sage-50/50">
+          <p className="text-center text-sm text-foreground-secondary">جاري تحميل بيانات حسابك…</p>
+        </Card>
+      )}
+
+      {loadError && (
+        <Card padding="md" className="mb-6 border-red-200 bg-red-50">
+          <p className="text-sm font-semibold text-red-800">تعذّر تحميل الحساب</p>
+          <p className="mt-2 text-sm text-red-700">{loadError}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => void load()}>
+              إعادة المحاولة
+            </Button>
+            <Button href={ROUTES.interview} size="sm" variant="secondary">
+              العودة للمقابلة
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {!user.interviewCompleted && (
         <Card padding="md" className="mb-8 border-gold-200 bg-gold-50/60">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -264,7 +301,7 @@ export function AccountScreen() {
             <>
               {approvedSession?.draft && <ApprovedPathCard session={approvedSession} />}
 
-              <TrackingAdaptationPanel userId={user.id} />
+              {!loading && <TrackingAdaptationPanel userId={user.id} />}
 
               <Section title="دوراتي النشطة" empty="لا توجد دورات نشطة حاليًا.">
                 {activeEnrollments.length === 0 ? null : (

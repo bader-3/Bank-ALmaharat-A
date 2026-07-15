@@ -63,7 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     const current = await auth.refreshSession();
-    setSession((prev) => (sessionsEqual(prev, current) ? prev : current));
+    setSession((prev) => {
+      if (!current) return null;
+      if (prev?.user.interviewCompleted !== current.user.interviewCompleted) {
+        return current;
+      }
+      return sessionsEqual(prev, current) ? prev : current;
+    });
   }, [auth]);
 
   const register = useCallback(

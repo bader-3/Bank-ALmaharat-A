@@ -23,13 +23,11 @@ import type {
   LearningProfile,
 } from "@/types/interview";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 
 type ChatMessage = InterviewConversationMessage;
 
 export function InterviewChat() {
-  const router = useRouter();
   const { user, refreshSession } = useAuth();
   const { isLoading, isAuthenticated } = useRequireAuth();
   const interview = getInterviewService();
@@ -61,7 +59,7 @@ export function InterviewChat() {
         if (!active) return;
 
         if (user.interviewCompleted && savedProfile) {
-          router.replace(ROUTES.account);
+          window.location.assign(ROUTES.account);
           return;
         }
 
@@ -82,7 +80,7 @@ export function InterviewChat() {
     return () => {
       active = false;
     };
-  }, [interview, router, user]);
+  }, [interview, user]);
 
   useEffect(() => {
     if (!user || hydratedUserId !== user.id || !started) return;
@@ -195,7 +193,7 @@ export function InterviewChat() {
 
       await interview.finalizeInterview(user.id);
       await refreshSession();
-      router.replace(ROUTES.account);
+      window.location.assign(ROUTES.account);
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذّر الانتقال إلى حسابك");
       setNavigating(false);
