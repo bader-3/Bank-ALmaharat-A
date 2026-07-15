@@ -9,7 +9,8 @@ interface ProfileSummaryProps {
 }
 
 export function ProfileSummary({ profile, showPlan = true }: ProfileSummaryProps) {
-  const { answers } = profile;
+  const answers = profile.answers;
+  const skills = profile.suggestedSkills ?? [];
 
   return (
     <div className="space-y-5">
@@ -17,30 +18,44 @@ export function ProfileSummary({ profile, showPlan = true }: ProfileSummaryProps
         <Badge variant="gold">ملف مولّد بالذكاء الاصطناعي</Badge>
       )}
 
-      <p className="type-body text-navy-700">{profile.summary}</p>
+      {profile.summary && (
+        <p className="type-body text-navy-700">{profile.summary}</p>
+      )}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SummaryItem label="الهدف" value={GOAL_LABELS[answers.goal] ?? answers.goal} />
-        <SummaryItem label="المستوى" value={LEVEL_LABELS[answers.currentLevel] ?? answers.currentLevel} />
-        <SummaryItem label="الساعات الأسبوعية" value={answers.weeklyHours} />
-        <SummaryItem label="أسلوب التعلّم" value={preferenceLabel(answers.learningPreference)} />
-      </div>
-
-      <div>
-        <p className="type-label text-sage-600">المهارات المقترحة</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {profile.suggestedSkills.map((skill) => (
-            <Badge key={skill} variant="sage">
-              {skill}
-            </Badge>
-          ))}
+      {answers && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SummaryItem label="الهدف" value={GOAL_LABELS[answers.goal] ?? answers.goal} />
+          <SummaryItem
+            label="المستوى"
+            value={LEVEL_LABELS[answers.currentLevel] ?? answers.currentLevel}
+          />
+          <SummaryItem label="الساعات الأسبوعية" value={answers.weeklyHours} />
+          <SummaryItem
+            label="أسلوب التعلّم"
+            value={preferenceLabel(answers.learningPreference)}
+          />
         </div>
-      </div>
+      )}
 
-      <div className="rounded-2xl border border-sage-200/60 bg-sage-50/50 px-4 py-3">
-        <p className="type-label text-sage-600">مسارك الأولي</p>
-        <p className="type-small mt-1 text-navy-700">{profile.suggestedPath}</p>
-      </div>
+      {skills.length > 0 && (
+        <div>
+          <p className="type-label text-sage-600">المهارات المقترحة</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {skills.map((skill) => (
+              <Badge key={skill} variant="sage">
+                {skill}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {profile.suggestedPath && (
+        <div className="rounded-2xl border border-sage-200/60 bg-sage-50/50 px-4 py-3">
+          <p className="type-label text-sage-600">مسارك الأولي</p>
+          <p className="type-small mt-1 text-navy-700">{profile.suggestedPath}</p>
+        </div>
+      )}
 
       {showPlan && profile.learningPlan && (
         <LearningPlanCard plan={profile.learningPlan} compact />

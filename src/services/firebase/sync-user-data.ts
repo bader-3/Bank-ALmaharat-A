@@ -1,4 +1,5 @@
 import { logFirestoreError } from "@/services/firebase/common";
+import { markInterviewCompleted } from "@/services/auth/mock-storage";
 import { getCloudAdaptationState, saveCloudAdaptationState } from "@/services/firebase/adaptation-state";
 import { getCloudEnrollments, saveCloudEnrollments } from "@/services/firebase/enrollments";
 import { getCloudGoalPlan, saveCloudGoalPlan } from "@/services/firebase/learning-goals";
@@ -88,6 +89,7 @@ export async function syncUserDataFromCloud(userId: string) {
       const profiles = readProfilesStore();
       profiles[userId] = cloudProfile.learningProfile;
       writeProfilesStore(profiles);
+      markInterviewCompleted(userId);
     } else if (localProfile) {
       await saveCloudLearningProfile(localProfile);
     }

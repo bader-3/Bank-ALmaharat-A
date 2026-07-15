@@ -23,11 +23,13 @@ import type {
   LearningProfile,
 } from "@/types/interview";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 
 type ChatMessage = InterviewConversationMessage;
 
 export function InterviewChat() {
+  const router = useRouter();
   const { user, refreshSession } = useAuth();
   const { isLoading, isAuthenticated } = useRequireAuth();
   const interview = getInterviewService();
@@ -40,6 +42,7 @@ export function InterviewChat() {
   const [profile, setProfile] = useState<LearningProfile | null>(null);
   const [started, setStarted] = useState(false);
   const [error, setError] = useState("");
+  const [navigating, setNavigating] = useState(false);
   const [hydratedUserId, setHydratedUserId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -165,6 +168,22 @@ export function InterviewChat() {
     }
   }
 
+  async function goToAccount() {
+    if (!user || navigating) return;
+
+    setNavigating(true);
+    setError("");
+
+    try {
+      await interview.syncInterviewCompletion(user.id);
+      await refreshSession();
+      router.push(ROUTES.account);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذّر الانتقال إلى حسابك");
+      setNavigating(false);
+    }
+  }
+
   if (isLoading || !isAuthenticated || !user || hydratedUserId !== user.id) {
     return (
       <AuthShellLayout>
@@ -259,8 +278,13 @@ export function InterviewChat() {
 
         {profile && (
           <div className="border-t border-border/60 p-3 sm:p-4">
-            <Button size="lg" fullWidth href={ROUTES.account}>
-              متابعة إلى لوحة التعلّم
+            <Button
+              size="lg"
+              fullWidth
+              disabled={navigating}
+              onClick={() => void goToAccount()}
+            >
+              {navigating ? "جاري التحميل…" : "متابعة إلى لوحة التعلّم"}
             </Button>
           </div>
         )}

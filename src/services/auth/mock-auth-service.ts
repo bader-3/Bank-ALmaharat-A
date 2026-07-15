@@ -4,6 +4,8 @@ import {
   clearSession,
   createSessionForUser,
   createUser,
+  getUserById,
+  persistSession,
   readSession,
   signInOrCreateOAuthUser,
   verifyCredentials,
@@ -85,13 +87,23 @@ export class MockAuthService implements AuthService {
   }
 
   async getSession(): Promise<AuthSession | null> {
-    const stored = readSession();
-    if (!stored) return null;
-    return toSession(stored);
+    return this.refreshSession();
   }
 
   async refreshSession(): Promise<AuthSession | null> {
-    return this.getSession();
+    const stored = readSession();
+    if (!stored) return null;
+
+    const freshUser = getUserById(stored.user.id);
+    const session = freshUser
+      ? { user: freshUser, token: stored.token }
+      : stored;
+
+    if (freshUser) {
+      persistSession(session);
+    }
+
+    return toSession(session);
   }
 }
 

@@ -29,6 +29,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { useWallet } from "@/providers/wallet-provider";
 import { getFavoritesService } from "@/services/favorites";
 import { getInterviewService } from "@/services/interview";
+import { syncUserDataFromCloud } from "@/services/firebase/sync-user-data";
 import { getLearningService } from "@/services/learning";
 import { getNoorService } from "@/services/noor";
 import type { Course } from "@/types/course";
@@ -51,7 +52,7 @@ const TABS: { id: AccountTab; label: string }[] = [
 
 export function AccountScreen() {
   const router = useRouter();
-  const { user, isLoading, logout } = useAuth();
+  const { user, isLoading, logout, refreshSession } = useAuth();
   const { isAuthenticated } = useRequireAuth();
   const { balance, stats, isLoading: walletLoading } = useWallet();
 
@@ -61,35 +62,51 @@ export function AccountScreen() {
   const [favoriteCourses, setFavoriteCourses] = useState<Course[]>([]);
   const [approvedSession, setApprovedSession] = useState<PlanningSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    setLoadError("");
 
-    const [userProfile, userEnrollments, favSlugs, planningSession] = await Promise.all([
-      getInterviewService().getProfile(user.id),
-      getLearningService().getEnrollments(user.id),
-      getFavoritesService().list(user.id),
-      getNoorService().getPlanningSession(user.id),
-    ]);
+    try {
+      const interview = getInterviewService();
+      await syncUserDataFromCloud(user.id);
+      const userProfile = await interview.getProfile(user.id);
 
-    setProfile(userProfile);
-    setEnrollments(userEnrollments);
-    setFavoriteCourses(
-      favSlugs.map((slug) => getCourseBySlug(slug)).filter((c): c is Course => Boolean(c)),
-    );
-    setApprovedSession(planningSession?.status === "accepted" ? planningSession : null);
-    setLoading(false);
-  }, [user]);
+      if (!userProfile && !user.interviewCompleted) {
+        router.replace(ROUTES.interview);
+        return;
+      }
+
+      if (userProfile) {
+        await interview.syncInterviewCompletion(user.id);
+        await refreshSession();
+      }
+
+      const [userEnrollments, favSlugs, planningSession] = await Promise.all([
+        getLearningService().getEnrollments(user.id),
+        getFavoritesService().list(user.id),
+        getNoorService().getPlanningSession(user.id),
+      ]);
+
+      setProfile(userProfile);
+      setEnrollments(userEnrollments);
+      setFavoriteCourses(
+        favSlugs.map((slug) => getCourseBySlug(slug)).filter((c): c is Course => Boolean(c)),
+      );
+      setApprovedSession(planningSession?.status === "accepted" ? planningSession : null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "تعذّر تحميل الحساب");
+    } finally {
+      setLoading(false);
+    }
+  }, [user, router, refreshSession]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!user || isLoading) return;
     void load();
-  }, [user, router, load]);
+  }, [user, isLoading, load]);
 
   const activeEnrollments = useMemo(
     () => enrollments.filter((e) => e.progress < 100),
@@ -101,8 +118,14 @@ export function AccountScreen() {
   );
 
   const recommended = getAiRecommendedCourses(profile, 2);
+  const walletStats = stats ?? {
+    balance: 0,
+    totalPurchased: 0,
+    totalUsed: 0,
+    purchases: [],
+  };
 
-  if (isLoading || !isAuthenticated || !user || loading || !stats) {
+  if (isLoading || !isAuthenticated || !user || loading || walletLoading) {
     return (
       <Container className="py-24">
         <p className="text-center text-foreground-muted">جاري التحميل…</p>
@@ -110,9 +133,20 @@ export function AccountScreen() {
     );
   }
 
+  if (loadError) {
+    return (
+      <Container className="py-24 text-center">
+        <p className="text-sm text-red-700">{loadError}</p>
+        <Button className="mt-4" onClick={() => void load()}>
+          إعادة المحاولة
+        </Button>
+      </Container>
+    );
+  }
+
   const usagePercent =
-    stats.totalPurchased > 0
-      ? Math.min(100, Math.round((stats.totalUsed / stats.totalPurchased) * 100))
+    walletStats.totalPurchased > 0
+      ? Math.min(100, Math.round((walletStats.totalUsed / walletStats.totalPurchased) * 100))
       : 0;
 
   return (
@@ -156,7 +190,7 @@ export function AccountScreen() {
         />
         <StatCard
           label="الساعات المستخدمة"
-          value={formatHoursAndMinutes(stats.totalUsed, true)}
+          value={formatHoursAndMinutes(walletStats.totalUsed, true)}
           unit="ساعة"
           icon={<IconClock size={20} />}
           accent="blue"
@@ -182,8 +216,8 @@ export function AccountScreen() {
           <div>
             <p className="text-xs font-semibold text-foreground-muted">استهلاك الساعات</p>
             <p className="mt-1 text-sm text-foreground-secondary">
-              استخدمت {formatHoursAndMinutes(stats.totalUsed)} من{" "}
-              {formatHoursAndMinutes(stats.totalPurchased)} مشتراة
+              استخدمت {formatHoursAndMinutes(walletStats.totalUsed)} من{" "}
+              {formatHoursAndMinutes(walletStats.totalPurchased)} مشتراة
             </p>
           </div>
           <span className="text-xl font-bold text-sage-600">{usagePercent}٪</span>
@@ -284,9 +318,9 @@ export function AccountScreen() {
 
           {tab === "purchases" && (
             <Section title="سجل شراء الساعات" empty="لم تشترِ ساعات بعد.">
-              {stats.purchases.length > 0 && (
+              {walletStats.purchases.length > 0 && (
                 <ul className="space-y-3">
-                  {stats.purchases.map((purchase) => (
+                  {walletStats.purchases.map((purchase) => (
                     <li key={purchase.id}>
                       <Card padding="md" className="flex flex-wrap items-center justify-between gap-3">
                         <div>
@@ -323,8 +357,8 @@ export function AccountScreen() {
                   {walletLoading ? "…" : formatHoursAndMinutes(balance)}
                 </p>
                 <p className="mt-2 text-xs text-foreground-muted">
-                  {formatHoursAndMinutes(stats.totalUsed, true)} مستخدمة ·{" "}
-                  {formatHoursAndMinutes(stats.totalPurchased, true)} مشتراة
+                  {formatHoursAndMinutes(walletStats.totalUsed, true)} مستخدمة ·{" "}
+                  {formatHoursAndMinutes(walletStats.totalPurchased, true)} مشتراة
                 </p>
               </div>
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gold-100 text-gold-700">

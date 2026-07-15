@@ -47,8 +47,11 @@ export function buildInterviewIntentText(
   profile: Pick<LearningProfile, "answers" | "summary">,
   conversationText = "",
 ): string {
-  const goalLabel = GOAL_LABELS[profile.answers.goal] ?? profile.answers.goal;
-  return [conversationText, profile.summary, goalLabel, profile.answers.priorExperience].join(" ");
+  const goalLabel = profile.answers
+    ? (GOAL_LABELS[profile.answers.goal] ?? profile.answers.goal)
+    : "";
+  const priorExperience = profile.answers?.priorExperience ?? "";
+  return [conversationText, profile.summary, goalLabel, priorExperience].filter(Boolean).join(" ");
 }
 
 function scoreCourseForInterview(
@@ -84,6 +87,10 @@ function scoreCourseForInterview(
         break;
       }
     }
+  }
+
+  if (!profile.answers) {
+    return { score: 1, reasons: ["مقترح من ملفك التعليمي"] };
   }
 
   const { goal, currentLevel, learningPreference } = profile.answers;
@@ -270,8 +277,12 @@ export function getScoredInterviewCourses(
       ? COURSES.filter((course) => relevantSpecialties.includes(course.specialtyId))
       : COURSES;
 
-  const goal = GOAL_LABELS[profile.answers.goal] ?? "هدفك";
-  const level = LEVEL_LABELS[profile.answers.currentLevel] ?? "مستواك";
+  const goal = profile.answers
+    ? (GOAL_LABELS[profile.answers.goal] ?? "هدفك")
+    : "هدفك";
+  const level = profile.answers
+    ? (LEVEL_LABELS[profile.answers.currentLevel] ?? "مستواك")
+    : "مستواك";
 
   return pool
     .map((course) => {
