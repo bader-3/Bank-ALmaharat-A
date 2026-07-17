@@ -10,9 +10,11 @@ import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconPlus, IconSparkle } from "@/components/ui/icons";
 import { SITE, ROUTES } from "@/lib/constants";
+import { formatPlanExportText, shareOrCopyPlanText } from "@/lib/noor/export-plan";
 import { useNoorAssistant } from "@/hooks/use-noor-assistant";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 const CAPABILITIES = [
   {
@@ -36,10 +38,27 @@ export function NoorScreen() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const assistant = useNoorAssistant();
   const interactionLocked = getNoorChatInteractionLocked(assistant.planningSession);
+  const [exportStatus, setExportStatus] = useState("");
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [assistant.messages, assistant.isLoadingReply]);
+
+  async function handleExportPlan(mode: "copy" | "share") {
+    if (!assistant.planningSession?.draft) return;
+    const text = formatPlanExportText(assistant.planningSession);
+    try {
+      if (mode === "copy") {
+        await navigator.clipboard.writeText(text);
+        setExportStatus("تم نسخ الخطة كنص");
+      } else {
+        const result = await shareOrCopyPlanText(text);
+        setExportStatus(result === "shared" ? "تمت المشاركة" : "تم نسخ الخطة كنص");
+      }
+    } catch {
+      setExportStatus("تعذّر التصدير — حاول مرة أخرى");
+    }
+  }
 
   return (
     <Container className="flex min-h-[calc(100vh-5rem)] flex-col py-10 lg:min-h-screen lg:py-14">
@@ -112,6 +131,20 @@ export function NoorScreen() {
           <p className="mt-1 text-sm text-foreground-secondary">
             يمكنك متابعة المهام اليومية من صفحة أهدافي، أو طلب خطة جديدة من نور لاحقًا.
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => void handleExportPlan("copy")}>
+              نسخ كنص
+            </Button>
+            <Button type="button" size="sm" onClick={() => void handleExportPlan("share")}>
+              مشاركة
+            </Button>
+            <Button href={ROUTES.goals} size="sm" variant="secondary">
+              أهدافي
+            </Button>
+          </div>
+          {exportStatus && (
+            <p className="mt-2 text-xs text-sage-700">{exportStatus}</p>
+          )}
         </Card>
       )}
 
