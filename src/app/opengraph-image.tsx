@@ -10,6 +10,10 @@ const GOLD = "#c49a2c";
 const SAGE = "#2d6a4f";
 const CREAM = "#f2eee6";
 
+/**
+ * Share card uses Latin brand lines for Satori reliability.
+ * Arabic title/description remain in HTML metadata (layout.tsx).
+ */
 export default function OpenGraphImage() {
   return new ImageResponse(
     (
@@ -25,51 +29,33 @@ export default function OpenGraphImage() {
           color: CREAM,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 20,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           <div
             style={{
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
               width: 72,
               height: 72,
               borderRadius: 18,
               background: SAGE,
-              color: GOLD,
-              fontSize: 40,
-              fontWeight: 700,
+              border: `3px solid ${GOLD}`,
             }}
-          >
-            ب
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <div style={{ fontSize: 28, color: GOLD, fontWeight: 600 }}>{SITE.tagline}</div>
-            <div style={{ fontSize: 56, fontWeight: 700, lineHeight: 1.1 }}>{SITE.name}</div>
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 28, color: GOLD, fontWeight: 600 }}>Learn by the hour</div>
+            <div style={{ fontSize: 58, fontWeight: 700, lineHeight: 1.1 }}>Arab Skills Bank</div>
           </div>
         </div>
 
         <div
           style={{
             display: "flex",
-            maxWidth: 900,
-            fontSize: 30,
+            maxWidth: 920,
+            fontSize: 28,
             lineHeight: 1.45,
             color: "rgba(242,238,230,0.88)",
           }}
         >
-          {SITE.description}
+          Hour-based learning wallet · Fair trainer discovery · Guided by Noor AI
         </div>
       </div>
     ),

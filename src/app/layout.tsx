@@ -22,6 +22,7 @@ const notoNaskh = Noto_Naskh_Arabic({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: `${SITE.name} | ${SITE.tagline}`,
   description: SITE.description,
   icons: {

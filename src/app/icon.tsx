@@ -7,6 +7,7 @@ const NAVY = "#0b1b2b";
 const GOLD = "#c49a2c";
 const SAGE = "#2d6a4f";
 
+/** Compact brand mark — geometric only so Satori prerender stays reliable. */
 export default function Icon() {
   return new ImageResponse(
     (
@@ -24,20 +25,13 @@ export default function Icon() {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 24,
-            height: 24,
-            borderRadius: 6,
+            width: 18,
+            height: 18,
+            borderRadius: 5,
             background: SAGE,
-            color: GOLD,
-            fontSize: 16,
-            fontWeight: 700,
-            lineHeight: 1,
+            border: `2px solid ${GOLD}`,
           }}
-        >
-          ب
-        </div>
+        />
       </div>
     ),
     { ...size },
