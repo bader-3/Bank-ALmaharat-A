@@ -21,17 +21,26 @@ import {
   rebuildPlanDraft,
   replaceDraftCourse,
 } from "@/lib/ai/plan-draft";
+import type { AssistantRecommendedCourse } from "@/lib/ai/prompts";
+import { isCourseRecommendationQuestion } from "@/lib/ai/mock-fallback";
+import { getAiRecommendedCourses } from "@/lib/courses/ai-recommendations";
 import { getSpecialtyById } from "@/lib/courses/mock-data";
 import { LEVEL_LABELS, DELIVERY_LABELS, type CourseLevel, type DeliveryMode } from "@/types/course";
+import { formatLearningInterest } from "@/lib/interview/steps";
+import {
+  PROFILE_CHANGED_EVENT,
+} from "@/lib/interview/update-learning-profile";
 import { syncUserDataFromCloud } from "@/services/firebase/sync-user-data";
 import {
   getNoorUserLearningContext,
   summarizeNoorUserContext,
 } from "@/services/firebase/user-learning-context";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { streamAssistantReply } from "@/services/ai/client";
 import { getGoalsService } from "@/services/goals";
 import { getInterviewService } from "@/services/interview";
+import { loadPlanningSessionLocalFirst } from "@/lib/noor/load-planning-session";
 import { getNoorService } from "@/services/noor";
 import { getWalletService } from "@/services/wallet";
 import type { AiChatMessage } from "@/types/ai";
@@ -96,7 +105,7 @@ function getSuggestions(isAuthenticated: boolean, interviewCompleted: boolean) {
   if (!interviewCompleted) {
     return ["لماذا المقابلة الذكية؟", "ماذا بعد التسجيل؟", "ما هي الساعات؟"];
   }
-  return ["ما الدورة المناسبة لي؟", "كيف أشحن محفظتي؟", "أعد لي خطة تعلّم"];
+  return ["وش تقدري تساعديني فيه؟", "ما الدورة المناسبة لي؟", "أعد لي خطة تعلّم"];
 }
 
 function buildWelcomeMessage(
@@ -139,6 +148,9 @@ export function useNoorAssistant() {
   const isLoadingReplyRef = useRef(false);
   const planningSessionRef = useRef<PlanningSession | null>(null);
   const userContextSummaryRef = useRef("");
+  const recommendedCoursesRef = useRef<AssistantRecommendedCourse[]>([]);
+  const learningTopicRef = useRef<string | undefined>(undefined);
+  const specialtyIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     isLoadingReplyRef.current = isLoadingReply;
@@ -151,22 +163,70 @@ export function useNoorAssistant() {
   useEffect(() => {
     if (!user?.id) {
       userContextSummaryRef.current = "";
+      recommendedCoursesRef.current = [];
+      learningTopicRef.current = undefined;
+      specialtyIdRef.current = undefined;
       return;
     }
+
     let active = true;
-    void syncUserDataFromCloud(user.id)
-      .then(() => getNoorUserLearningContext(user.id))
-      .then((context) => {
+
+    async function refreshProfileContext() {
+      if (!user?.id) return;
+      try {
+        await syncUserDataFromCloud(user.id);
+        const [cloudContext, localProfile] = await Promise.all([
+          getNoorUserLearningContext(user.id),
+          getInterviewService().getProfile(user.id),
+        ]);
         if (!active) return;
-        userContextSummaryRef.current = summarizeNoorUserContext(context);
-      })
-      .catch(() => undefined);
+
+        const profile = localProfile ?? cloudContext.learningProfile;
+        const mergedContext = profile
+          ? { ...cloudContext, learningProfile: profile }
+          : cloudContext;
+        userContextSummaryRef.current = summarizeNoorUserContext(mergedContext);
+
+        const topic = profile
+          ? formatLearningInterest({
+              learningTopic: profile.answers?.learningTopic,
+              learningFocus: profile.answers?.learningFocus,
+            })
+          : "—";
+        learningTopicRef.current = topic !== "—" ? topic : profile?.answers?.learningTopic;
+        specialtyIdRef.current = profile?.answers?.specialtyId;
+
+        recommendedCoursesRef.current = getAiRecommendedCourses(profile ?? null, 3).map(
+          ({ course, reason }) => ({
+            slug: course.slug,
+            title: course.title,
+            reason: reason ?? `مناسبة لمستواك واهتمامك في ${course.specialtyId}`,
+            specialty: getSpecialtyById(course.specialtyId)?.name,
+            levelLabel: LEVEL_LABELS[course.level],
+            hours: course.hours,
+          }),
+        );
+      } catch {
+        // ignore context load errors — assistant still works without profile
+      }
+    }
+
+    void refreshProfileContext();
+
+    const handleProfileChanged = (event: Event) => {
+      const changedUserId = (event as CustomEvent<{ userId?: string }>).detail?.userId;
+      if (changedUserId && changedUserId !== user.id) return;
+      void refreshProfileContext();
+    };
+
+    window.addEventListener(PROFILE_CHANGED_EVENT, handleProfileChanged);
     return () => {
       active = false;
+      window.removeEventListener(PROFILE_CHANGED_EVENT, handleProfileChanged);
     };
   }, [user?.id]);
 
-  const interviewCompleted = Boolean(user?.interviewCompleted);
+  const interviewCompleted = user ? isInterviewCompleteForUser(user) : false;
   const suggestions = useMemo(
     () => getSuggestions(isAuthenticated, interviewCompleted),
     [isAuthenticated, interviewCompleted],
@@ -463,7 +523,7 @@ export function useNoorAssistant() {
     planningSessionRef.current = next;
     void noorService.savePlanningSession(next).catch(() => undefined);
     appendAiMessage(
-      "بنيت لك مسودة الخطة من اختياراتك. راجعها بالأسفل ثم اضغط «اعتماد الخطة وإضافة الأهداف» لربطها بأهدافك اليومية.",
+      "بنيت لك مسودة الخطة من اختياراتك. راجعها بالأسفل ثم اعتمدها. الأهداف اليومية في التقويم تُضاف بعد شراء دروس من الدورات المختارة — على أيام دراستك فقط.",
     );
   }, [appendAiMessage, noorService, planningSession]);
 
@@ -475,7 +535,7 @@ export function useNoorAssistant() {
     const applyStoredConversation = async () => {
       const [conversation, storedSession] = await Promise.all([
         noorService.getConversation(ownerId),
-        noorService.getPlanningSession(ownerId),
+        loadPlanningSessionLocalFirst(ownerId),
       ]);
       if (!active) return;
       const storedPlanningSession = storedSession
@@ -527,7 +587,7 @@ export function useNoorAssistant() {
     const unsubscribe = noorService.subscribe(ownerId, (source) => {
       void Promise.all([
         noorService.getConversation(ownerId),
-        noorService.getPlanningSession(ownerId),
+        loadPlanningSessionLocalFirst(ownerId),
       ]).then(([conversation, storedPlanningSession]) => {
         if (!active) return;
         const effectivePlanningSession = storedPlanningSession
@@ -732,11 +792,25 @@ export function useNoorAssistant() {
             interviewCompleted,
             pathname,
             userContextSummary: userContextSummaryRef.current || undefined,
+            recommendedCourses: recommendedCoursesRef.current.length
+              ? recommendedCoursesRef.current
+              : undefined,
+            learningTopic: learningTopicRef.current,
+            specialtyId: specialtyIdRef.current,
           },
           onChunk: (chunk) => {
             setMessages((prev) => prev.map((m) => (m.id === aiId ? { ...m, text: chunk } : m)));
           },
         });
+
+        if (isCourseRecommendationQuestion(text) && recommendedCoursesRef.current.length) {
+          const slugs = recommendedCoursesRef.current.map((course) => course.slug);
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === aiId ? { ...message, recommendedCourseSlugs: slugs } : message,
+            ),
+          );
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "تعذّر الرد");
         setMessages((prev) => prev.filter((m) => m.id !== aiId));

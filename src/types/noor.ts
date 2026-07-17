@@ -10,6 +10,8 @@ export type NoorMessage = {
   createdAt: string;
   actionHref?: string;
   actionLabel?: string;
+  /** دورات موصى بها تُعرض كبطاقات داخل فقاعة نور */
+  recommendedCourseSlugs?: string[];
 };
 
 export type NoorConversation = {
