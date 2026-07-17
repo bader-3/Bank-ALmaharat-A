@@ -2,6 +2,7 @@
 
 import { CourseCard } from "@/components/courses/course-card";
 import { CourseFiltersBar } from "@/components/courses/course-filters";
+import { CoursesFairnessNotice } from "@/components/courses/courses-fairness-notice";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconCompass, IconSparkle } from "@/components/ui/icons";
@@ -65,6 +66,7 @@ export function CoursesDiscovery() {
         <p className="mt-2 text-pretty text-foreground-secondary">
           استكشف مدربين ودورات بساعات قليلة — قرارك يأتي بعد التجربة، والشهادة بعد الإكمال.
         </p>
+        <CoursesFairnessNotice />
       </div>
 
       <Card padding="md" className="mt-8">
