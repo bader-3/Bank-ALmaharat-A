@@ -3,18 +3,21 @@
 import { AuthDivider } from "@/components/auth/auth-divider";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGuestOnly } from "@/hooks/use-auth-redirect";
+import { ROUTES } from "@/lib/constants";
 import { hasFieldErrors, validateLogin } from "@/lib/validators/auth";
 import { useAuth } from "@/providers/auth-provider";
+import { seedDemoAccount } from "@/services/demo/seed-demo-account";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 export function LoginForm() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, refreshSession } = useAuth();
   useGuestOnly();
 
   const [email, setEmail] = useState("");
@@ -22,6 +25,7 @@ export function LoginForm() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,6 +49,21 @@ export function LoginForm() {
     router.push("/welcome");
   }
 
+  async function handleDemoLogin() {
+    setFormError("");
+    setIsDemoLoading(true);
+    try {
+      seedDemoAccount();
+      await refreshSession();
+      router.push(ROUTES.platformHome);
+    } catch {
+      setFormError("تعذّر تجهيز الحساب التجريبي. أعد المحاولة.");
+      setIsDemoLoading(false);
+    }
+  }
+
+  const busy = isSubmitting || isDemoLoading;
+
   return (
     <AuthShell
       eyebrow="الحساب"
@@ -58,7 +77,7 @@ export function LoginForm() {
       }
     >
       <div className="space-y-5">
-        <SocialAuthButtons disabled={isSubmitting} onError={setFormError} />
+        <SocialAuthButtons disabled={busy} onError={setFormError} />
 
         <AuthDivider />
 
@@ -93,10 +112,27 @@ export function LoginForm() {
             </p>
           )}
 
-          <Button type="submit" size="lg" fullWidth disabled={isSubmitting}>
+          <Button type="submit" size="lg" fullWidth disabled={busy}>
             {isSubmitting ? "جاري تسجيل الدخول…" : "تسجيل الدخول بالبريد"}
           </Button>
         </form>
+
+        <div className="rounded-2xl border border-dashed border-gold-500/40 bg-gold-500/[0.06] p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Badge variant="gold">تجريبي</Badge>
+            <p className="text-xs text-foreground-muted">للعرض أمام اللجنة — بدون تسجيل</p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            disabled={busy}
+            onClick={() => void handleDemoLogin()}
+          >
+            {isDemoLoading ? "جاري تجهيز الحساب…" : "جرّب كحساب تجريبي"}
+          </Button>
+        </div>
       </div>
     </AuthShell>
   );
