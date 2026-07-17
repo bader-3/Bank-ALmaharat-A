@@ -24,6 +24,30 @@ const notoNaskh = Noto_Naskh_Arabic({
 export const metadata: Metadata = {
   title: `${SITE.name} | ${SITE.tagline}`,
   description: SITE.description,
+  icons: {
+    icon: [{ url: "/icon", type: "image/png" }],
+  },
+  openGraph: {
+    title: `${SITE.name} | ${SITE.tagline}`,
+    description: SITE.description,
+    siteName: SITE.name,
+    locale: "ar_SA",
+    type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: SITE.name,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE.name} | ${SITE.tagline}`,
+    description: SITE.description,
+    images: ["/opengraph-image"],
+  },
 };
 
 export default function RootLayout({
