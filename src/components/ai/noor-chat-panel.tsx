@@ -15,6 +15,7 @@ interface NoorChatPanelProps {
   onSend: (text: string) => void;
   suggestions: string[];
   isLoadingReply: boolean;
+  loadingThinkingText?: string;
   error: string;
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -37,6 +38,7 @@ export function NoorChatPanel({
   onSend,
   suggestions,
   isLoadingReply,
+  loadingThinkingText = "يفكّر…",
   error,
   isLoading,
   isAuthenticated,
@@ -104,7 +106,7 @@ export function NoorChatPanel({
                   : "ms-6 bg-navy-900 text-[#f2eee6] dark:bg-sage-600 dark:text-white",
               )}
             >
-              {msg.text || (isPendingAi ? "…" : "")}
+              {msg.text || (isPendingAi ? loadingThinkingText || "يفكّر…" : "")}
               {msg.role === "ai" &&
                 msg.recommendedCourseSlugs?.map((slug) => (
                   <NoorMessageCourseCard key={slug} slug={slug} onNavigate={onActionClick} />

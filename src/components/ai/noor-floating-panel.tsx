@@ -111,6 +111,7 @@ export function NoorFloatingPanel({ open, onOpenChange }: NoorFloatingPanelProps
               onSend={(text) => void assistant.sendQuestion(text)}
               suggestions={assistant.suggestions}
               isLoadingReply={assistant.isLoadingReply}
+              loadingThinkingText={assistant.loadingThinkingText}
               error={assistant.error}
               isLoading={assistant.isLoading}
               isAuthenticated={assistant.isAuthenticated}

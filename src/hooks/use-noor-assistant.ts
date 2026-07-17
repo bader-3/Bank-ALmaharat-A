@@ -23,6 +23,11 @@ import {
 } from "@/lib/ai/plan-draft";
 import type { AssistantRecommendedCourse } from "@/lib/ai/prompts";
 import { isCourseRecommendationQuestion } from "@/lib/ai/mock-fallback";
+import {
+  getThinkingMessages,
+  resolveThinkingContext,
+  type ThinkingContext,
+} from "@/lib/ai/thinking-messages";
 import { getAiRecommendedCourses } from "@/lib/courses/ai-recommendations";
 import { getSpecialtyById } from "@/lib/courses/mock-data";
 import { LEVEL_LABELS, DELIVERY_LABELS, type CourseLevel, type DeliveryMode } from "@/types/course";
@@ -140,6 +145,7 @@ export function useNoorAssistant() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<NoorMessage[]>([]);
   const [isLoadingReply, setIsLoadingReply] = useState(false);
+  const [loadingThinkingText, setLoadingThinkingText] = useState("");
   const [isAcceptingDraft, setIsAcceptingDraft] = useState(false);
   const [error, setError] = useState("");
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
@@ -147,6 +153,7 @@ export function useNoorAssistant() {
   const [hydratedOwnerId, setHydratedOwnerId] = useState<string | null>(null);
   const skipNextSaveRef = useRef(false);
   const isLoadingReplyRef = useRef(false);
+  const thinkingContextRef = useRef<ThinkingContext>("general");
   const planningSessionRef = useRef<PlanningSession | null>(null);
   const userContextSummaryRef = useRef("");
   const recommendedCoursesRef = useRef<AssistantRecommendedCourse[]>([]);
@@ -155,6 +162,24 @@ export function useNoorAssistant() {
 
   useEffect(() => {
     isLoadingReplyRef.current = isLoadingReply;
+  }, [isLoadingReply]);
+
+  useEffect(() => {
+    if (!isLoadingReply) {
+      setLoadingThinkingText("");
+      return;
+    }
+
+    const lines = getThinkingMessages(thinkingContextRef.current);
+    let index = 0;
+    setLoadingThinkingText(lines[0] ?? "يفكّر…");
+
+    const timer = window.setInterval(() => {
+      index = (index + 1) % lines.length;
+      setLoadingThinkingText(lines[index] ?? "يفكّر…");
+    }, 1_250);
+
+    return () => window.clearInterval(timer);
   }, [isLoadingReply]);
 
   useEffect(() => {
@@ -658,6 +683,11 @@ export function useNoorAssistant() {
       // Mark loading synchronously so the storage subscribe never reloads a
       // stale conversation over the in-flight messages (prevents the reply
       // from being wiped out).
+      thinkingContextRef.current = resolveThinkingContext({
+        lastUserText: text,
+        isPlanningActive: isPlanningInterviewActive(planningSessionRef.current),
+        asksForPlan: getPlanRequest(text).asksForPlan,
+      });
       isLoadingReplyRef.current = true;
       setIsLoadingReply(true);
       setMessages((prev) => [...prev, userMessage, aiMessage]);
@@ -1205,12 +1235,15 @@ export function useNoorAssistant() {
     setInput,
     messages,
     isLoadingReply,
+    loadingThinkingText,
     isAcceptingDraft,
     error,
     planningSession,
     suggestions,
     sendQuestion,
     setMessageFeedback,
+    retryLastFailed,
+    lastFailedMessage,
     resetConversation,
     startNewChat,
     confirmPlanningDays,
