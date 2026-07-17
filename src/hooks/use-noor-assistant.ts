@@ -1162,6 +1162,23 @@ export function useNoorAssistant() {
     }
   }, [isAcceptingDraft, persistPlanningSession, planningSession, user]);
 
+  const setMessageFeedback = useCallback(
+    (messageId: string, feedback: "up" | "down") => {
+      setMessages((prev) => {
+        const next = prev.map((message) =>
+          message.id === messageId
+            ? { ...message, feedback: message.feedback === feedback ? null : feedback }
+            : message,
+        );
+        if (ownerId !== "guest") {
+          void noorService.saveConversation(ownerId, next).catch(() => undefined);
+        }
+        return next;
+      });
+    },
+    [noorService, ownerId],
+  );
+
   return {
     user,
     isAuthenticated,
@@ -1176,6 +1193,7 @@ export function useNoorAssistant() {
     planningSession,
     suggestions,
     sendQuestion,
+    setMessageFeedback,
     resetConversation,
     startNewChat,
     confirmPlanningDays,

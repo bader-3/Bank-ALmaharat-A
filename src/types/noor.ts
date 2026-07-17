@@ -12,6 +12,8 @@ export type NoorMessage = {
   actionLabel?: string;
   /** دورات موصى بها تُعرض كبطاقات داخل فقاعة نور */
   recommendedCourseSlugs?: string[];
+  /** تقييم المستخدم لرد نور */
+  feedback?: "up" | "down" | null;
 };
 
 export type NoorConversation = {

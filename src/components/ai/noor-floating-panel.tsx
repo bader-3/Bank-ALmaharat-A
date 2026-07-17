@@ -117,6 +117,7 @@ export function NoorFloatingPanel({ open, onOpenChange }: NoorFloatingPanelProps
               interviewCompleted={assistant.interviewCompleted}
               onActionClick={() => onOpenChange(false)}
               interactionLocked={interactionLocked}
+              onFeedback={assistant.setMessageFeedback}
               afterMessages={
                 <NoorChatExtras
                   planningSession={assistant.planningSession}

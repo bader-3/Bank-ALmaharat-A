@@ -9,9 +9,10 @@ import { NoorWorkflowProgress } from "@/components/ai/noor-workflow-progress";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconPlus, IconSparkle } from "@/components/ui/icons";
-import { SITE } from "@/lib/constants";
+import { SITE, ROUTES } from "@/lib/constants";
 import { useNoorAssistant } from "@/hooks/use-noor-assistant";
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 
 const CAPABILITIES = [
   {
@@ -21,12 +22,12 @@ const CAPABILITIES = [
   },
   {
     title: "خطط تعلّم",
-    description: "بناء خطة أسبوعية وتحويلها إلى أهداف يومية.",
+    description: "بناء خطة أسبوعية من ملفك وتحويلها إلى أهداف يومية.",
     accent: "bg-sage-100 text-sage-700",
   },
   {
     title: "توصيات ذكية",
-    description: "اقتراح مدربين ودورات حسب ملفك من المقابلة.",
+    description: "اقتراح دورات ومدربين حسب تخصصك ومستواك في الملف.",
     accent: "bg-gold-100 text-gold-700",
   },
 ] as const;
@@ -49,8 +50,12 @@ export function NoorScreen() {
         </div>
         <h1 className="mt-3 text-3xl font-bold text-navy-900 lg:text-4xl">نور</h1>
         <p className="mt-2 max-w-2xl text-pretty text-foreground-secondary">
-          مرشدتك في {SITE.name} — اسأليها عن اقتصاد الساعات، الاستكشاف، اختيار المدرب،
-          أو إعداد خطة تعلّم مخصّصة.
+          مرشدتك في {SITE.name} — تعتمد على ملفك التعليمي لاقتراح الدورات، بناء الخطة،
+          وجدولة أهدافك. حدّث ملفك من{" "}
+          <Link href={ROUTES.account} className="font-medium text-sage-700 hover:underline">
+            حسابي
+          </Link>{" "}
+          متى تغيّرت أيامك أو تخصصك.
         </p>
       </div>
 
@@ -103,7 +108,7 @@ export function NoorScreen() {
 
       {assistant.planningSession?.status === "accepted" && (
         <Card padding="md" className="mt-8 border-sage-200 bg-sage-50/40">
-          <p className="font-semibold text-sage-700">تم اعتماد الخطة وإضافة أهدافها بنجاح.</p>
+          <p className="font-semibold text-sage-700">تم اعتماد الخطة. الأهداف اليومية تُضاف بعد شراء الدروس على أيام دراستك.</p>
           <p className="mt-1 text-sm text-foreground-secondary">
             يمكنك متابعة المهام اليومية من صفحة أهدافي، أو طلب خطة جديدة من نور لاحقًا.
           </p>
@@ -148,6 +153,7 @@ export function NoorScreen() {
           interviewCompleted={assistant.interviewCompleted}
           messagesClassName="min-h-[20rem]"
           interactionLocked={interactionLocked}
+          onFeedback={assistant.setMessageFeedback}
           afterMessages={
             <NoorChatExtras
               planningSession={assistant.planningSession}
