@@ -187,6 +187,8 @@ export function NoorScreen() {
           messagesClassName="min-h-[20rem]"
           interactionLocked={interactionLocked}
           onFeedback={assistant.setMessageFeedback}
+          onRetry={assistant.retryLastFailed}
+          canRetry={Boolean(assistant.lastFailedMessage)}
           afterMessages={
             <NoorChatExtras
               planningSession={assistant.planningSession}

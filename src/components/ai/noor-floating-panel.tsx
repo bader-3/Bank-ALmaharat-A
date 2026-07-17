@@ -118,6 +118,8 @@ export function NoorFloatingPanel({ open, onOpenChange }: NoorFloatingPanelProps
               onActionClick={() => onOpenChange(false)}
               interactionLocked={interactionLocked}
               onFeedback={assistant.setMessageFeedback}
+              onRetry={assistant.retryLastFailed}
+              canRetry={Boolean(assistant.lastFailedMessage)}
               afterMessages={
                 <NoorChatExtras
                   planningSession={assistant.planningSession}

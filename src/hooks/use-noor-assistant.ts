@@ -142,6 +142,7 @@ export function useNoorAssistant() {
   const [isLoadingReply, setIsLoadingReply] = useState(false);
   const [isAcceptingDraft, setIsAcceptingDraft] = useState(false);
   const [error, setError] = useState("");
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [planningSession, setPlanningSession] = useState<PlanningSession | null>(null);
   const [hydratedOwnerId, setHydratedOwnerId] = useState<string | null>(null);
   const skipNextSaveRef = useRef(false);
@@ -647,6 +648,7 @@ export function useNoorAssistant() {
       if (!text || isLoadingReply) return;
 
       setError("");
+      setLastFailedMessage(null);
       setInput("");
 
       const userMessage = createMessage("user", text, "u");
@@ -812,8 +814,18 @@ export function useNoorAssistant() {
           );
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "تعذّر الرد");
-        setMessages((prev) => prev.filter((m) => m.id !== aiId));
+        setError(err instanceof Error ? err.message : "تعذّر الرد — تحقق من الاتصال وحاول مرة أخرى");
+        setLastFailedMessage(text);
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === aiId
+              ? {
+                  ...message,
+                  text: "تعذّر استلام الرد. يمكنك إعادة المحاولة من الزر أسفل المحادثة.",
+                }
+              : message,
+          ),
+        );
       } finally {
         isLoadingReplyRef.current = false;
         setIsLoadingReply(false);
@@ -829,6 +841,11 @@ export function useNoorAssistant() {
       user,
     ],
   );
+
+  const retryLastFailed = useCallback(() => {
+    if (!lastFailedMessage || isLoadingReply) return;
+    void sendQuestion(lastFailedMessage);
+  }, [isLoadingReply, lastFailedMessage, sendQuestion]);
 
   const saveCourseSelections = useCallback(
     async (courseSelections: CourseSelection[]) => {
