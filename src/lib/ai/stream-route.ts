@@ -16,6 +16,12 @@ export async function createGeminiTextStreamResponse(params: {
 }): Promise<Response> {
   const { scope, systemPrompt, history, userText, mockFallback, fallbackLogMessage } = params;
 
+  const mockHeaders = {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-cache",
+    "X-AI-Source": "mock-fallback",
+  } as const;
+
   try {
     const result = await withGeminiFallback(scope, systemPrompt, async (model, modelName) => {
       const chat = model.startChat({ history });
@@ -34,6 +40,12 @@ export async function createGeminiTextStreamResponse(params: {
           controller.close();
         } catch (error) {
           logAiError(`${scope}:stream`, error);
+          if (isAiFallbackEnabled()) {
+            console.warn(fallbackLogMessage ?? `[${scope}] stream failed — using mock fallback`);
+            controller.enqueue(encoder.encode(mockFallback()));
+            controller.close();
+            return;
+          }
           controller.error(error);
         }
       },
@@ -57,10 +69,8 @@ export async function createGeminiTextStreamResponse(params: {
     const mockText = mockFallback();
 
     return new Response(mockText, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "X-AI-Source": "mock-fallback",
-      },
+      status: 200,
+      headers: mockHeaders,
     });
   }
 }
