@@ -2,32 +2,39 @@ import { createPlanDraft } from "@/lib/ai/plan-draft";
 import { reviewSessionKey } from "@/lib/ai/review-flow";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
 import { getLessonHours, getLessonsForCourse } from "@/lib/learning/lessons";
-import { getRecommendedPackageId } from "@/lib/wallet/packages";
+import { clearOnboardingTourStorage } from "@/lib/onboarding/storage";
 import {
   createSessionForUser,
   createUser,
   findUserByEmail,
   getUserById,
-  markInterviewCompleted,
+  resetInterviewCompletion,
 } from "@/services/auth/mock-storage";
-import { isFavorite, toggleFavorite } from "@/services/favorites/mock-favorites-storage";
+import { getFavoriteSlugs, isFavorite, removeFavorite, toggleFavorite } from "@/services/favorites/mock-favorites-storage";
 import { toDateKey } from "@/services/goals";
 import {
   replaceGoalPlanGoals,
   replaceWithAcceptedPlan,
 } from "@/services/goals/mock-goals-storage";
-import { saveAiLearningProfile } from "@/services/interview/mock-profile-storage";
+import {
+  clearInterviewConversation,
+  clearLearningProfile,
+  readLearningProfile,
+} from "@/services/interview/mock-profile-storage";
 import {
   completeLesson,
   createEnrollmentWithLessons,
   getEnrollmentsForUser,
   replaceUserEnrollments,
 } from "@/services/learning/mock-enrollment-storage";
-import { writePlanningSession } from "@/services/noor/mock-noor-storage";
+import {
+  deleteNoorConversation,
+  deletePlanningSession,
+  writePlanningSession,
+} from "@/services/noor/mock-noor-storage";
 import { writeReviewSession } from "@/services/review/mock-review-storage";
 import { addHours, getWalletBalance, reconcileWalletWithEnrollments } from "@/services/wallet/mock-wallet-storage";
-import { clearOnboardingTourStorage } from "@/lib/onboarding/storage";
-import type { Course } from "@/types/course";
+import type { Course, CourseLevel } from "@/types/course";
 import type { LearningGoal } from "@/types/goals";
 import type { LearningProfile } from "@/types/interview";
 import type { Lesson } from "@/types/learning";
@@ -37,16 +44,20 @@ import type { LessonReviewSession } from "@/types/review";
 export const DEMO_ACCOUNT = {
   email: "demo@skillsbank.local",
   password: "Demo1234!",
-  fullName: "نورة العتيبي",
+  fullName: "بدر الهذلي",
 } as const;
 
 const DEMO_WALLET_HOURS = 32;
-const SEED_VERSION = "rich-v3";
 const STREAK_DAYS = 7;
 
-const COMPLETED_COURSE_SLUG = "learning-habits";
-const ACTIVE_COURSE_SLUG = "english-for-work";
-const SECOND_ACTIVE_SLUG = "public-speaking";
+const FALLBACK_SLUGS = ["learning-habits", "english-for-work", "public-speaking"] as const;
+
+function toCourseLevel(value: string | undefined): CourseLevel {
+  if (value === "beginner" || value === "intermediate" || value === "advanced") {
+    return value;
+  }
+  return "intermediate";
+}
 
 function daysAgoKey(daysAgo: number) {
   const date = new Date();
@@ -62,100 +73,11 @@ function isoDaysAgo(daysAgo: number, hour = 18) {
   return date.toISOString();
 }
 
-function buildDemoProfile(userId: string): LearningProfile {
-  const primary = getCourseBySlug(ACTIVE_COURSE_SLUG);
-  const habits = getCourseBySlug(COMPLETED_COURSE_SLUG);
-  const speaking = getCourseBySlug(SECOND_ACTIVE_SLUG);
-  const now = new Date().toISOString();
-
-  return {
-    userId,
-    answers: {
-      goal: "skill_upgrade",
-      specialtyId: "languages",
-      learningTopic: "الإنجليزية المهنية",
-      learningFocus: "التواصل في بيئة العمل",
-      learningFocusSlug: ACTIVE_COURSE_SLUG,
-      currentLevel: "intermediate",
-      priorExperience: "some",
-      weeklyHours: "6 ساعات",
-      weeklyHoursNumeric: 6,
-      availableDays: ["السبت", "الأحد", "الثلاثاء", "الخميس"],
-      hoursPerDay: 1.5,
-      preferredStudyTime: "مساءً",
-      learningPreference: "both",
-      budgetOrHours: "20+h",
-    },
-    summary:
-      "نورة تطوّر الإنجليزية المهنية وعادات التعلّم، بمستوى متوسط ومسار نشط يظهر إنجازات حقيقية للعرض أمام اللجنة.",
-    suggestedSkills: ["محادثة مهنية", "عادات تعلّم", "إلقاء وعرض"],
-    suggestedPath: "مسار التواصل المهني مع عادات مستدامة",
-    completedAt: now,
-    aiGenerated: true,
-    learningPlan: {
-      totalWeeks: 5,
-      totalHours: (primary?.hours ?? 16) + (habits?.hours ?? 5),
-      suggestedPackageId: getRecommendedPackageId({
-        goal: "skill_upgrade",
-        currentLevel: "intermediate",
-        priorExperience: "some",
-        weeklyHours: "6 ساعات",
-        weeklyHoursNumeric: 6,
-        learningPreference: "both",
-        budgetOrHours: "20+h",
-      }),
-      packageReason: "رصيد يكفي لإكمال دورة قصيرة ومواصلة مسار الإنجليزية.",
-      weeks: [
-        {
-          week: 1,
-          title: habits?.title ?? "عادات التعلّم",
-          courseSlug: COMPLETED_COURSE_SLUG,
-          hours: 3,
-          focus: "بناء عادة يومية",
-        },
-        {
-          week: 2,
-          title: habits?.title ?? "عادات التعلّم",
-          courseSlug: COMPLETED_COURSE_SLUG,
-          hours: 2,
-          focus: "مراجعة وترسيخ",
-        },
-        {
-          week: 3,
-          title: primary?.title ?? "إنجليزي مهني",
-          courseSlug: ACTIVE_COURSE_SLUG,
-          hours: 4,
-          focus: "التواصل المهني",
-        },
-        {
-          week: 4,
-          title: primary?.title ?? "إنجليزي مهني",
-          courseSlug: ACTIVE_COURSE_SLUG,
-          hours: 4,
-          focus: "البريد والاجتماعات",
-        },
-        {
-          week: 5,
-          title: speaking?.title ?? "فن الإلقاء",
-          courseSlug: SECOND_ACTIVE_SLUG,
-          hours: 3,
-          focus: "الثقة أمام الجمهور",
-        },
-      ],
-    },
-    courseRecommendations: [
-      { slug: ACTIVE_COURSE_SLUG, reason: "يطابق هدف التواصل المهني." },
-      { slug: COMPLETED_COURSE_SLUG, reason: "أساس لاستمرارية التعلّم." },
-      { slug: SECOND_ACTIVE_SLUG, reason: "يكمل مهارات العرض والمقابلات." },
-    ],
-  };
-}
-
 function ensureWallet(userId: string) {
   const balance = getWalletBalance(userId);
   if (balance >= DEMO_WALLET_HOURS) return;
   addHours(userId, DEMO_WALLET_HOURS - balance, {
-    packageName: "باقة التركيز — عرض تجريبي",
+    packageName: "باقة العرض التجريبي",
     price: 0,
   });
 }
@@ -210,30 +132,51 @@ function enrollCourse(
   };
 }
 
-function seedEnrollments(userId: string) {
-  // Wipe prior demo enrollments so re-entry always looks full
+/** يختار دورات العرض من ملف المقابلة الحقيقي، مع احتياطي من الكتالوج. */
+function resolveDemoCourseSlugs(profile: LearningProfile | null): [string, string, string] {
+  const fromProfile: string[] = [];
+
+  if (profile?.answers.learningFocusSlug) {
+    fromProfile.push(profile.answers.learningFocusSlug);
+  }
+  for (const rec of profile?.courseRecommendations ?? []) {
+    if (rec.slug) fromProfile.push(rec.slug);
+  }
+  for (const week of profile?.learningPlan?.weeks ?? []) {
+    if (week.courseSlug) fromProfile.push(week.courseSlug);
+  }
+
+  const unique = Array.from(new Set(fromProfile)).filter((slug) => Boolean(getCourseBySlug(slug)));
+  const merged = [...unique, ...FALLBACK_SLUGS].filter(
+    (slug, index, arr) => arr.indexOf(slug) === index && Boolean(getCourseBySlug(slug)),
+  );
+
+  return [merged[0], merged[1] ?? merged[0], merged[2] ?? merged[1] ?? merged[0]];
+}
+
+function seedEnrollments(userId: string, slugs: [string, string, string]) {
   replaceUserEnrollments(userId, []);
 
-  const habits = getCourseBySlug(COMPLETED_COURSE_SLUG);
-  const english = getCourseBySlug(ACTIVE_COURSE_SLUG);
-  const speaking = getCourseBySlug(SECOND_ACTIVE_SLUG);
-  if (!habits || !english || !speaking) {
+  const completedCourse = getCourseBySlug(slugs[0]);
+  const activeCourse = getCourseBySlug(slugs[1]);
+  const secondCourse = getCourseBySlug(slugs[2]);
+  if (!completedCourse || !activeCourse || !secondCourse) {
     throw new Error("DEMO_COURSE_MISSING");
   }
 
-  const completed = enrollCourse(userId, habits, {
-    completeCount: getLessonsForCourse(habits).length,
+  const completed = enrollCourse(userId, completedCourse, {
+    completeCount: getLessonsForCourse(completedCourse).length,
     startedDaysAgo: 18,
   });
 
-  const active = enrollCourse(userId, english, {
-    purchaseCount: Math.max(4, Math.ceil(getLessonsForCourse(english).length * 0.75)),
-    completeCount: Math.max(3, Math.ceil(getLessonsForCourse(english).length * 0.5)),
+  const active = enrollCourse(userId, activeCourse, {
+    purchaseCount: Math.max(4, Math.ceil(getLessonsForCourse(activeCourse).length * 0.75)),
+    completeCount: Math.max(3, Math.ceil(getLessonsForCourse(activeCourse).length * 0.5)),
     startedDaysAgo: 10,
   });
 
-  const second = enrollCourse(userId, speaking, {
-    purchaseCount: Math.max(3, Math.ceil(getLessonsForCourse(speaking).length * 0.5)),
+  const second = enrollCourse(userId, secondCourse, {
+    purchaseCount: Math.max(3, Math.ceil(getLessonsForCourse(secondCourse).length * 0.5)),
     completeCount: 2,
     startedDaysAgo: 4,
   });
@@ -264,7 +207,7 @@ function seedReviews(
           {
             id: `rm_${lesson.id}_1`,
             role: "ai",
-            text: `أحسنتِ بعد درس «${lesson.title}». هل تودين ملخصًا سريعًا أم اختبارًا قصيرًا؟`,
+            text: `أحسنت بعد درس «${lesson.title}». هل تود ملخصًا سريعًا أم اختبارًا قصيرًا؟`,
             createdAt: startedAt,
           },
           {
@@ -276,7 +219,7 @@ function seedReviews(
           {
             id: `rm_${lesson.id}_3`,
             role: "ai",
-            text: `ملخص: ركّزي على تطبيق فكرة الدرس في موقف عمل حقيقي. أنهيتِ المراجعة بنجاح.`,
+            text: `ملخص: ركّز على تطبيق فكرة الدرس في موقف عمل حقيقي. أنهيت المراجعة بنجاح.`,
             createdAt: completedAt,
           },
         ],
@@ -306,19 +249,20 @@ function seedReviews(
 
 function seedGoalsAndPlan(
   userId: string,
+  profile: LearningProfile | null,
   courses: { slug: string; lessons: Lesson[] }[],
 ) {
   const now = new Date().toISOString();
   const preferences: PlanningPreferences = {
-    goal: "تطوير الإنجليزية المهنية وعادات التعلّم",
-    specialtyId: "languages",
-    domain: "لغات وتطوير ذاتي",
-    currentLevel: "intermediate",
-    priorExperience: "خبرة محدودة في التواصل المهني",
-    weeklyHours: 6,
-    durationWeeks: 5,
-    availableDays: ["السبت", "الأحد", "الثلاثاء", "الخميس"],
-    preferredTimes: ["مساءً"],
+    goal: profile?.summary?.slice(0, 80) || "مسار تعلّم من مقابلة نور",
+    specialtyId: profile?.answers.specialtyId ?? "languages",
+    domain: profile?.answers.learningTopic ?? "تطوير مهارات",
+    currentLevel: toCourseLevel(profile?.answers.currentLevel),
+    priorExperience: String(profile?.answers.priorExperience ?? "some"),
+    weeklyHours: profile?.answers.weeklyHoursNumeric ?? 6,
+    durationWeeks: profile?.learningPlan?.totalWeeks ?? 5,
+    availableDays: profile?.answers.availableDays ?? ["السبت", "الأحد", "الثلاثاء", "الخميس"],
+    preferredTimes: [profile?.answers.preferredStudyTime ?? "مساءً"],
     deliveryModes: ["live", "recorded"],
     pace: "balanced",
     budgetHours: DEMO_WALLET_HOURS,
@@ -331,7 +275,7 @@ function seedGoalsAndPlan(
     status: "selected" as const,
     selectedLessonIds: entry.lessons.map((lesson) => lesson.id),
     order: index + 1,
-    reason: "مدرج في العرض التجريبي من الكتالوج الحقيقي",
+    reason: "من ملف المقابلة في العرض التجريبي",
     updatedAt: now,
   }));
 
@@ -350,7 +294,7 @@ function seedGoalsAndPlan(
         version: 1,
         draft,
         createdAt: now,
-        note: "خطة العرض التجريبي الغنية",
+        note: "خطة بعد مقابلة العرض التجريبي",
       },
     ],
     createdAt: now,
@@ -359,7 +303,6 @@ function seedGoalsAndPlan(
   };
   writePlanningSession(session);
 
-  // Flatten lessons for a realistic calendar + streak
   const lessonQueue = courses.flatMap((entry) =>
     entry.lessons.map((lesson) => ({
       courseSlug: entry.slug,
@@ -367,18 +310,21 @@ function seedGoalsAndPlan(
     })),
   );
 
+  if (lessonQueue.length === 0) return;
+
   const goalPool: LearningGoal[] = [];
   const times = ["18:00", "19:00", "20:30"];
+  const activeSlug = courses[1]?.slug ?? courses[0].slug;
+  const secondSlug = courses[2]?.slug ?? activeSlug;
 
-  // Last STREAK_DAYS (including today): every day fully completed → سلسلة إنجاز
   for (let dayAgo = STREAK_DAYS - 1; dayAgo >= 0; dayAgo -= 1) {
     const scheduledDate = daysAgoKey(dayAgo);
     const primary = lessonQueue[(STREAK_DAYS - 1 - dayAgo) % lessonQueue.length];
     const secondaryTitle =
       dayAgo === 0
-        ? "مراجعة سريعة لمحادثة مهنية"
+        ? "مراجعة سريعة لما تعلّمته اليوم"
         : dayAgo === 1
-          ? "تمرين تنفّس قبل عرض قصير"
+          ? "تمرين قصير قبل الدرس التالي"
           : "تلخيص ما تعلّمته اليوم";
 
     goalPool.push({
@@ -400,7 +346,7 @@ function seedGoalsAndPlan(
       id: `ai_habit_${dayAgo}_${userId}`,
       title: secondaryTitle,
       description: "عادة يومية تدعم الاستمرارية",
-      courseSlug: dayAgo <= 1 ? SECOND_ACTIVE_SLUG : ACTIVE_COURSE_SLUG,
+      courseSlug: dayAgo <= 1 ? secondSlug : activeSlug,
       durationMinutes: dayAgo === 0 ? 25 : 15,
       source: "ai",
       originalDate: scheduledDate,
@@ -411,13 +357,12 @@ function seedGoalsAndPlan(
     });
   }
 
-  // Tomorrow: open goals so التقويم/أهدافي still show work ahead
   const tomorrow = daysAgoKey(-1);
   goalPool.push({
-    id: `ai_next_email_${userId}`,
-    title: "كتابة بريد مهني واحد",
-    description: "هدف الغد — عادة لدعم مسار الإنجليزية",
-    courseSlug: ACTIVE_COURSE_SLUG,
+    id: `ai_next_review_${userId}`,
+    title: "مراجعة هدف الغد",
+    description: "هدف مفتوح بعد اكتمال المقابلة",
+    courseSlug: activeSlug,
     durationMinutes: 15,
     source: "ai",
     originalDate: tomorrow,
@@ -426,48 +371,36 @@ function seedGoalsAndPlan(
     createdAt: now,
   });
 
-  goalPool.push({
-    id: `ai_next_speaking_${userId}`,
-    title: "تمرين افتتاحية عرض لمدة دقيقة",
-    description: "تحضير لدورة فن الإلقاء",
-    courseSlug: SECOND_ACTIVE_SLUG,
-    durationMinutes: 20,
-    source: "ai",
-    originalDate: tomorrow,
-    scheduledDate: tomorrow,
-    startTime: "20:30",
-    createdAt: now,
-  });
-
-  // Force refresh on every demo login (acceptedPlanKey is unique per seed)
   replaceGoalPlanGoals(userId, []);
   replaceWithAcceptedPlan(
     userId,
-    `demo:${userId}:${SEED_VERSION}:${Date.now()}`,
+    `demo-after-interview:${userId}:${Date.now()}`,
     now,
     goalPool,
   );
 }
 
-function seedFavorites(userId: string) {
-  for (const slug of [ACTIVE_COURSE_SLUG, SECOND_ACTIVE_SLUG, "data-analysis-intro"]) {
-    if (!isFavorite(userId, slug) && getCourseBySlug(slug)) {
+function seedFavorites(userId: string, slugs: string[]) {
+  for (const slug of slugs) {
+    if (getCourseBySlug(slug) && !isFavorite(userId, slug)) {
       toggleFavorite(userId, slug);
     }
   }
 }
 
+export function isDemoAccountEmail(email: string | undefined | null): boolean {
+  if (!email) return false;
+  return email.trim().toLowerCase() === DEMO_ACCOUNT.email;
+}
+
 /**
- * Creates (or refreshes) a full demo learner for hackathon judging:
- * completed + active courses, reviews, goals with streak, favorites, wallet, plan.
- * Clears onboarding tour storage so welcome + page tips appear like a first visit.
+ * المرحلة 1: حساب تجريبي على باب مقابلة نور (كأنه مستخدم جديد).
  */
 export function seedDemoAccount(): {
   email: string;
   password: string;
   userId: string;
 } {
-  // جولة تعريفية كاملة عند كل دخول تجريبي (ترحيب + فقاعات الصفحات)
   clearOnboardingTourStorage();
 
   const existing = findUserByEmail(DEMO_ACCOUNT.email);
@@ -475,19 +408,7 @@ export function seedDemoAccount(): {
 
   if (existing) {
     userId = existing.id;
-    const publicUser = getUserById(userId) ?? {
-      id: existing.id,
-      fullName: DEMO_ACCOUNT.fullName,
-      email: existing.email,
-      createdAt: existing.createdAt,
-      provider: existing.provider,
-      interviewCompleted: true,
-    };
-    createSessionForUser({
-      ...publicUser,
-      fullName: DEMO_ACCOUNT.fullName,
-      interviewCompleted: true,
-    });
+    resetInterviewCompletion(userId, { fullName: DEMO_ACCOUNT.fullName });
   } else {
     const created = createUser({
       fullName: DEMO_ACCOUNT.fullName,
@@ -498,11 +419,43 @@ export function seedDemoAccount(): {
     createSessionForUser(created);
   }
 
-  markInterviewCompleted(userId);
-  saveAiLearningProfile(buildDemoProfile(userId));
+  clearLearningProfile(userId);
+  clearInterviewConversation(userId);
+  replaceUserEnrollments(userId, []);
+  replaceGoalPlanGoals(userId, []);
+  deletePlanningSession(userId);
+  deleteNoorConversation(userId);
+  for (const slug of getFavoriteSlugs(userId)) {
+    removeFavorite(userId, slug);
+  }
+
+  const finalUser = getUserById(userId);
+  if (finalUser) {
+    createSessionForUser({
+      ...finalUser,
+      fullName: DEMO_ACCOUNT.fullName,
+      interviewCompleted: false,
+    });
+  }
+
+  return {
+    email: DEMO_ACCOUNT.email,
+    password: DEMO_ACCOUNT.password,
+    userId,
+  };
+}
+
+/**
+ * المرحلة 2: بعد إنهاء المقابلة والضغط على «انتقل للموقع».
+ * يبقي ملف نور كما بَنَته المقابلة، ويضيف فوقه تقدّمًا وإنجازات للعرض.
+ */
+export function enrichDemoAccountAfterInterview(userId: string): void {
+  const profile = readLearningProfile(userId);
+  const slugs = resolveDemoCourseSlugs(profile);
+
   ensureWallet(userId);
 
-  const { completed, active, second } = seedEnrollments(userId);
+  const { completed, active, second } = seedEnrollments(userId, slugs);
 
   const enrolledHours = getEnrollmentsForUser(userId).reduce(
     (sum, enrollment) => sum + enrollment.hoursUsed,
@@ -515,25 +468,15 @@ export function seedDemoAccount(): {
     { course: active.course, completed: active.completed },
     { course: second.course, completed: second.completed },
   ]);
-  seedGoalsAndPlan(userId, [
+
+  seedGoalsAndPlan(userId, profile, [
     { slug: completed.course.slug, lessons: completed.purchased },
     { slug: active.course.slug, lessons: active.purchased },
     { slug: second.course.slug, lessons: second.purchased },
   ]);
-  seedFavorites(userId);
 
-  const finalUser = getUserById(userId);
-  if (finalUser) {
-    createSessionForUser({
-      ...finalUser,
-      fullName: DEMO_ACCOUNT.fullName,
-      interviewCompleted: true,
-    });
-  }
+  seedFavorites(userId, slugs);
 
-  return {
-    email: DEMO_ACCOUNT.email,
-    password: DEMO_ACCOUNT.password,
-    userId,
-  };
+  // يبقى الترحيب والجولة التعريفية لأول دخول بعد المقابلة
+  clearOnboardingTourStorage();
 }

@@ -101,3 +101,19 @@ export function saveInterviewConversation(
   }
   return saved;
 }
+
+export function clearLearningProfile(userId: string) {
+  const profiles = readProfiles();
+  if (!(userId in profiles)) return;
+  delete profiles[userId];
+  writeProfiles(profiles);
+  notifyProfileChanged(userId);
+}
+
+export function clearInterviewConversation(userId: string) {
+  if (!isBrowser()) return;
+  const conversations = readConversations();
+  if (!(userId in conversations)) return;
+  delete conversations[userId];
+  window.localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations));
+}

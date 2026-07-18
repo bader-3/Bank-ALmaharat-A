@@ -55,7 +55,7 @@ export function LoginForm() {
     try {
       seedDemoAccount();
       await refreshSession();
-      router.push(ROUTES.platformHome);
+      router.push(ROUTES.interview);
     } catch {
       setFormError("تعذّر تجهيز الحساب التجريبي. أعد المحاولة.");
       setIsDemoLoading(false);

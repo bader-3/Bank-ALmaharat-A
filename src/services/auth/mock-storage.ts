@@ -208,6 +208,32 @@ export function markInterviewCompleted(userId: string) {
   createSessionForUser(publicUser);
 }
 
+/** يعيد المستخدم لحالة ما قبل إكمال المقابلة (للحساب التجريبي مثلًا). */
+export function resetInterviewCompletion(
+  userId: string,
+  options?: { fullName?: string },
+) {
+  const users = readUsers();
+  const target = users.find((user) => user.id === userId);
+  if (!target) return;
+
+  const next: StoredUser = {
+    ...target,
+    fullName: options?.fullName?.trim() || target.fullName,
+    interviewCompleted: false,
+  };
+
+  writeUsers(users.map((user) => (user.id === userId ? next : user)));
+
+  const session = readSession();
+  const publicUser = toPublicUser(next);
+  if (session?.user.id === userId) {
+    persistSession({ ...session, user: publicUser });
+  } else {
+    createSessionForUser(publicUser);
+  }
+}
+
 export function getUserById(userId: string): Omit<StoredUser, "password"> | null {
   const user = readUsers().find((entry) => entry.id === userId);
   return user ? toPublicUser(user) : null;

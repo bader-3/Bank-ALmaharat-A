@@ -20,7 +20,7 @@ export function HeroActions() {
     try {
       seedDemoAccount();
       await refreshSession();
-      router.push(ROUTES.platformHome);
+      router.push(ROUTES.interview);
     } catch {
       setIsDemoLoading(false);
     }

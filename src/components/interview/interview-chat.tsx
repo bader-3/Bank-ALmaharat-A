@@ -14,6 +14,10 @@ import { completePlatformAccess } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { getInterviewService } from "@/services/interview";
 import { createSessionForUser, getUserById, readSession } from "@/services/auth/mock-storage";
+import {
+  enrichDemoAccountAfterInterview,
+  isDemoAccountEmail,
+} from "@/services/demo/seed-demo-account";
 import type { AiChatMessage } from "@/types/ai";
 import type { InterviewConversationMessage, LearningProfile } from "@/types/interview";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -138,6 +142,11 @@ export function InterviewChat() {
       const session = readSession();
       if (!session || session.user.id !== user.id || !session.user.interviewCompleted) {
         throw new Error("تعذّر حفظ جلسة الدخول. تأكد من السماح بالتخزين في المتصفح.");
+      }
+
+      // الحساب التجريبي: الملف من المقابلة + إنجازات جاهزة للعرض بعد الدخول
+      if (isDemoAccountEmail(user.email)) {
+        enrichDemoAccountAfterInterview(user.id);
       }
 
       const specialtyId = savedProfile.answers.specialtyId;
