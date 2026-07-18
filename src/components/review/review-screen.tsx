@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconArrow, IconSparkle } from "@/components/ui/icons";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 import {
   appendExchange,
@@ -28,7 +29,6 @@ import type { AiChatMessage } from "@/types/ai";
 import type { LessonReviewSession, ReviewContext, ReviewMessage } from "@/types/review";
 import Link from "next/link";
 import { notFound, useRouter } from "next/navigation";
-import { useAuth } from "@/providers/auth-provider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface ReviewScreenProps {
@@ -38,7 +38,7 @@ interface ReviewScreenProps {
 
 export function ReviewScreen({ slug, lessonId }: ReviewScreenProps) {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   useRequireAuth();
 
   const [session, setSession] = useState<LessonReviewSession | null>(null);
@@ -104,13 +104,9 @@ export function ReviewScreen({ slug, lessonId }: ReviewScreenProps) {
   }, [user, course, lessonMeta, slug, lessonId, router]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void load();
-  }, [user, router, load]);
+  }, [interviewReady, user, load]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -275,7 +271,7 @@ export function ReviewScreen({ slug, lessonId }: ReviewScreenProps) {
 
   if (!course || !lessonMeta) notFound();
 
-  if (authLoading || !user || loading || !session) {
+  if (authLoading || !user || !interviewReady || loading || !session) {
     return (
       <Container className="py-24">
         <p className="text-center text-foreground-muted">جاري تحميل جلسة المراجعة…</p>

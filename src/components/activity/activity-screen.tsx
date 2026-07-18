@@ -6,19 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconArrow, IconBook, IconCheck, IconSparkle } from "@/components/ui/icons";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 import { ROUTES } from "@/lib/constants";
-import { useAuth } from "@/providers/auth-provider";
 import { getLearningService } from "@/services/learning";
 import { getReviewService } from "@/services/review";
 import type { Enrollment } from "@/types/learning";
 import type { LessonReviewSession } from "@/types/review";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export function ActivityScreen() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   const { isAuthenticated } = useRequireAuth();
   const learning = useMemo(() => getLearningService(), []);
   const reviewService = useMemo(() => getReviewService(), []);
@@ -49,15 +47,11 @@ export function ActivityScreen() {
   }, [user, learning, reviewService]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void load();
-  }, [user, router, load]);
+  }, [interviewReady, user, load]);
 
-  if (authLoading || !isAuthenticated || !user || loading) {
+  if (authLoading || !isAuthenticated || !user || !interviewReady || loading) {
     return (
       <Container className="py-24">
         <p className="type-body text-center text-foreground-muted">جاري تحميل سجل التعلّم…</p>

@@ -5,6 +5,8 @@ import {
   withGeminiFallback,
 } from "@/lib/ai/gemini";
 import { alignGeneratedProfileWithCatalog } from "@/lib/ai/align-profile-recommendations";
+import { applyStructuredAnswersToProfile } from "@/lib/interview/build-structured-profile";
+import type { StructuredInterviewDraft } from "@/lib/interview/steps";
 import { isAiFallbackEnabled, mockProfileFromConversation } from "@/lib/ai/mock-fallback";
 import { PROFILE_SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import type { AiChatMessage, AiGeneratedProfile } from "@/types/ai";
@@ -13,8 +15,20 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { messages: AiChatMessage[] };
+    const body = (await request.json()) as {
+      messages: AiChatMessage[];
+      structured?: StructuredInterviewDraft;
+    };
     const messages = body.messages ?? [];
+    const structured = body.structured;
+
+    if (structured?.goal) {
+      const profile = applyStructuredAnswersToProfile(
+        mockProfileFromConversation(messages, structured),
+        structured,
+      );
+      return Response.json({ profile, source: "structured-local" });
+    }
 
     const conversation = messages
       .map((m) => `${m.role === "user" ? "المتعلّم" : "المساعد"}: ${m.text}`)
@@ -46,10 +60,18 @@ export async function POST(request: Request) {
         },
       );
 
-      const profile = alignGeneratedProfileWithCatalog(
-        parseJsonResponse<AiGeneratedProfile>(result),
-        messages,
-      );
+      const profile = structured
+        ? applyStructuredAnswersToProfile(
+            alignGeneratedProfileWithCatalog(
+              parseJsonResponse<AiGeneratedProfile>(result),
+              messages,
+            ),
+            structured,
+          )
+        : alignGeneratedProfileWithCatalog(
+            parseJsonResponse<AiGeneratedProfile>(result),
+            messages,
+          );
       return Response.json({ profile, source: "gemini" });
     } catch (geminiError) {
       logAiError("ai/profile:gemini-failed", geminiError);
@@ -59,7 +81,9 @@ export async function POST(request: Request) {
       }
 
       console.warn("[ai/profile] using mock fallback");
-      const profile = mockProfileFromConversation(messages);
+      const profile = structured
+        ? applyStructuredAnswersToProfile(mockProfileFromConversation(messages, structured), structured)
+        : mockProfileFromConversation(messages);
       return Response.json({ profile, source: "mock-fallback" });
     }
   } catch (error) {

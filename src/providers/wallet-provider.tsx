@@ -36,6 +36,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<WalletStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedRef = useRef(false);
+  const refreshingRef = useRef(false);
 
   const refreshWallet = useCallback(async () => {
     if (!userId) {
@@ -46,19 +47,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+
     if (!hasLoadedRef.current) {
       setIsLoading(true);
     }
 
-    const enrollments = await learning.getEnrollments(userId);
-    const enrolledHours = enrollments.reduce((sum, enrollment) => sum + enrollment.hoursUsed, 0);
-    reconcileWalletWithEnrollments(userId, enrolledHours);
+    try {
+      const enrollments = await learning.getEnrollments(userId);
+      const enrolledHours = enrollments.reduce((sum, enrollment) => sum + enrollment.hoursUsed, 0);
+      reconcileWalletWithEnrollments(userId, enrolledHours);
 
-    const nextStats = await wallet.getStats(userId);
-    setStats(nextStats);
-    setBalance(nextStats.balance);
-    setIsLoading(false);
-    hasLoadedRef.current = true;
+      const nextStats = await wallet.getStats(userId);
+      setStats(nextStats);
+      setBalance(nextStats.balance);
+      hasLoadedRef.current = true;
+    } finally {
+      setIsLoading(false);
+      refreshingRef.current = false;
+    }
   }, [userId, wallet, learning]);
 
   useEffect(() => {

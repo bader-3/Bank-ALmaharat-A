@@ -1,5 +1,6 @@
 import type { AuthResult, AuthSession, LoginInput, RegisterInput } from "@/types/auth";
 import type { AuthService } from "@/services/auth/types";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import {
   clearSession,
   createSessionForUser,
@@ -24,14 +25,19 @@ function toSession(stored: {
   };
   token: string;
 }): AuthSession {
+  const baseUser = {
+    id: stored.user.id,
+    fullName: stored.user.fullName,
+    email: stored.user.email,
+    createdAt: stored.user.createdAt,
+    provider: stored.user.provider,
+    interviewCompleted: stored.user.interviewCompleted ?? false,
+  };
+
   return {
     user: {
-      id: stored.user.id,
-      fullName: stored.user.fullName,
-      email: stored.user.email,
-      createdAt: stored.user.createdAt,
-      provider: stored.user.provider,
-      interviewCompleted: stored.user.interviewCompleted ?? false,
+      ...baseUser,
+      interviewCompleted: isInterviewCompleteForUser(baseUser),
     },
     token: stored.token,
   };
@@ -95,17 +101,26 @@ export class MockAuthService implements AuthService {
     if (!stored) return null;
 
     const freshUser = getUserById(stored.user.id);
-    if (!freshUser) {
-      return toSession(stored);
-    }
+    const user = freshUser ?? {
+      ...stored.user,
+      interviewCompleted: stored.user.interviewCompleted ?? false,
+    };
 
-    const interviewCompletedChanged =
-      freshUser.interviewCompleted !== stored.user.interviewCompleted;
+    const session = {
+      user: {
+        ...user,
+        interviewCompleted: isInterviewCompleteForUser({
+          id: user.id,
+          interviewCompleted: user.interviewCompleted ?? false,
+        }),
+      },
+      token: stored.token,
+    };
 
-    const session = { user: freshUser, token: stored.token };
-
-    if (interviewCompletedChanged) {
+    try {
       persistSession(session);
+    } catch {
+      // Keep in-memory session even if re-persist fails.
     }
 
     return toSession(session);

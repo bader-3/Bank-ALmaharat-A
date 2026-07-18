@@ -1,3 +1,4 @@
+import { weekdayIndexFromLabel } from "@/lib/goals/weekdays";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
 import type { LearningPlan } from "@/types/ai";
 import type {
@@ -15,17 +16,6 @@ function roundHours(value: number) {
 function cloneDraft(draft: PlanDraft): PlanDraft {
   return JSON.parse(JSON.stringify(draft)) as PlanDraft;
 }
-
-const DAY_INDEX: Record<string, number> = {
-  الأحد: 0,
-  الاثنين: 1,
-  الإثنين: 1,
-  الثلاثاء: 2,
-  الأربعاء: 3,
-  الخميس: 4,
-  الجمعة: 5,
-  السبت: 6,
-};
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
@@ -60,7 +50,7 @@ function scheduleLessons(
 ) {
   const availableDayIndexes = new Set(
     (draft.availableDays.length ? draft.availableDays : ["السبت"])
-      .map((day) => DAY_INDEX[day])
+      .map((day) => weekdayIndexFromLabel(day))
       .filter((day): day is number => day !== undefined),
   );
   if (!availableDayIndexes.size) availableDayIndexes.add(6);
@@ -103,7 +93,9 @@ function scheduleLessons(
         schedule.push({
           id: `${lesson.courseSlug}-${lesson.id}`,
           week,
-          day: draft.availableDays.find((day) => DAY_INDEX[day] === date.getDay()) ?? "السبت",
+          day:
+            draft.availableDays.find((day) => weekdayIndexFromLabel(day) === date.getDay()) ??
+            "السبت",
           scheduledDate: toDateKey(date),
           startTime: formatTime(startTime),
           durationMinutes: lesson.durationMinutes,
@@ -142,6 +134,7 @@ function scheduleLessons(
       lessonIndex += 1;
     }
     week += 1;
+    if (week > durationWeeks + lessons.length + 2) break;
   }
 
   return { schedule, totalWeeks: Math.max(durationWeeks, schedule.at(-1)?.week ?? 1) };

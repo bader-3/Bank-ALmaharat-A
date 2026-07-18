@@ -7,9 +7,9 @@ export const SITE = {
 
 export const NAV_LINKS = [
   { href: "/courses", label: "الدورات" },
-  { href: "/#noor", label: "نور" },
-  { href: "/#idea", label: "الفكرة" },
   { href: "/#how-it-works", label: "كيف يعمل" },
+  { href: "/#idea", label: "الفكرة" },
+  { href: "/#noor", label: "نور" },
   { href: "/#principles", label: "المبادئ" },
 ] as const;
 
@@ -21,6 +21,7 @@ export const ROUTES = {
   account: "/account",
   interview: "/interview",
   courses: "/courses",
+  trainers: "/trainers",
   wallet: "/wallet",
   goals: "/goals",
   path: "/path",
@@ -28,6 +29,8 @@ export const ROUTES = {
   favorites: "/favorites",
   activity: "/activity",
   noor: "/noor",
+  /** Default landing after interview — full app shell with sidebar */
+  platformHome: "/courses",
   review: (slug: string, lessonId: string) => `/review/${slug}/${lessonId}` as const,
   trainer: (id: string) => `/trainers/${id}` as const,
   learn: (slug: string) => `/learn/${slug}` as const,

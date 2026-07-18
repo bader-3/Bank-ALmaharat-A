@@ -5,18 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconArrow, IconHeart, IconSparkle } from "@/components/ui/icons";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 import { ROUTES } from "@/lib/constants";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
-import { useAuth } from "@/providers/auth-provider";
 import { getFavoritesService } from "@/services/favorites";
 import type { Course } from "@/types/course";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export function FavoritesScreen() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   const { isAuthenticated } = useRequireAuth();
   const favoritesService = useMemo(() => getFavoritesService(), []);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -31,13 +29,9 @@ export function FavoritesScreen() {
   }, [user, favoritesService]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void load();
-  }, [user, router, load]);
+  }, [interviewReady, user, load]);
 
   useEffect(() => {
     function handleStorage() {
@@ -47,7 +41,7 @@ export function FavoritesScreen() {
     return () => window.removeEventListener("storage", handleStorage);
   }, [load]);
 
-  if (authLoading || !isAuthenticated || !user || loading) {
+  if (authLoading || !isAuthenticated || !user || !interviewReady || loading) {
     return (
       <Container className="py-24">
         <p className="type-body text-center text-foreground-muted">جاري تحميل المفضّلة…</p>

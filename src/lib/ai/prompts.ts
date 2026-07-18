@@ -58,12 +58,25 @@ ${JSON.stringify(getPackagesForAi(), null, 2)}
 - إذا ذكر الإنجليزية أو اللغات فاختر slug من تخصص languages فقط.
 - استخدم slugs موجودة في القائمة فقط — لا تخترع دورات.`;
 
+export type AssistantRecommendedCourse = {
+  slug: string;
+  title: string;
+  reason: string;
+  specialty?: string;
+  levelLabel?: string;
+  hours?: number;
+};
+
 export type AssistantContext = {
   isAuthenticated: boolean;
   interviewCompleted?: boolean;
   pathname?: string;
   planningInterview?: boolean;
   userContextSummary?: string;
+  /** دورات موصى بها من ملف المقابلة — تُستخدم عند سؤال «الدورة المناسبة». */
+  recommendedCourses?: AssistantRecommendedCourse[];
+  learningTopic?: string;
+  specialtyId?: string;
 };
 
 export const PLAN_EXTRACTION_SYSTEM_PROMPT = `أنت محلل مدخلات لمخطط تعلّم عربي.
@@ -99,6 +112,15 @@ export function buildAssistantSystemPrompt(context: AssistantContext) {
     ? `\n## سجل المتعلّم الحالي\n${context.userContextSummary}`
     : "";
 
+  const recommendations = context.recommendedCourses?.length
+    ? `\n## توصيات الدورات من ملف المتعلّم\n${context.recommendedCourses
+        .map(
+          (course, index) =>
+            `${index + 1}. «${course.title}»${course.reason ? ` — ${course.reason}` : ""} (افتحها من صفحة الدورات)`,
+        )
+        .join("\n")}`
+    : "";
+
   return `اسمك «نور»، وأنت المساعد الذكي والمرشد العائم في بنك المهارات العربي.
 
 ${buildFullPlatformKnowledge()}
@@ -108,15 +130,19 @@ ${buildFullPlatformKnowledge()}
 الصفحة الحالية: ${context.pathname ?? "غير معروفة"}
 ${context.planningInterview ? "الوضع الحالي: مقابلة لبناء خطة تعلّم — لا تخرج عن سياق الأسئلة المنظمة." : ""}
 ${userRecord}
+${recommendations}
+${context.learningTopic ? `مجال المتعلّم من المقابلة: ${context.learningTopic}` : ""}
 
 قواعد الرد:
 - أجب بالعربية الفصحى المبسّطة فقط. لا تستخدم الإنجليزية ولا تخلط اللغات.
-- اجعل الرد 2-4 جمل ما لم يطلب المتعلّم تفصيلًا.
-- عند سؤال عن دورة أو مدرب: استخدم الفهرس أعلاه فقط — اذكر slug أو اسمًا موجودًا.
-- عند سؤال عن صفحة: وجّه للمسار الصحيح من جدول الصفحات.
-- إعداد الخطة المنظمة يتم في /noor — وجّه إليه عند طلب «خطة تعلّم».
+- عند ذكر الصفحات: استخدمي الأسماء العربية فقط مثل «الدورات»، «المحفظة»، «أهدافي»، «مساري»، «محادثة نور»، «حسابي»، «جلسة المراجعة». لا تكتبي مسارات إنجليزية مثل /courses أو /wallet أو /goals في ردودك للمستخدم.
+- اجعل الرد 2-4 جمل ما لم يطلب المتعلّم تفصيلًا أو قائمة خدمات أو توصيات دورات.
+- إذا سُئلت عن الدورة المناسبة أو «بناء على ملفي» أو توصية شخصية: اذكري 1–3 دورات من قسم «توصيات الدورات» أعلاه مع السبب، ووجّهي لصفحة الدورات بالاسم العربي. احترمي مسار التركيز (مثل الإنجليزية) ولا ترشّحي دورة لغة أخرى لمجرد أن التخصص «لغات».
+- إذا سُئلت عمّا تساعدين فيه أو عن خدماتك أو قدراتك: اذكري بوضوح أدوارك من قسم «خدمات نور». لا تكتفي بتلخيص ملف المتعلّم ولا بعرض الباقات فقط.
+- عند سؤال عن دورة أو مدرب: استخدم الفهرس أعلاه فقط — اذكر الاسم العربي للدورة.
+- إعداد الخطة المنظمة يتم من صفحة «محادثة نور» — وجّه إليها عند طلب «خطة تعلّم».
 - لا تخترع أسعارًا أو دورات أو مدربين خارج الفهرس.
-- إذا سُئلت عن اسمك، أجب بأن اسمك نور.
+- إذا سُئلت عن اسمك، أجب بأن اسمك نور وأنك المرشدة التعليمية في المنصة.
 - كن ودودًا ومباشرًا.`;
 }
 

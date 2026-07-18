@@ -1,42 +1,32 @@
 "use client";
 
+import { InterviewCompletionPanel } from "@/components/interview/interview-completion-panel";
 import { ProfileSummary } from "@/components/interview/profile-summary";
-import { LearningPlanCard } from "@/components/ai/learning-plan-card";
 import { InterviewShell } from "@/components/interview/interview-shell";
+import { InterviewStructuredFlow } from "@/components/interview/interview-structured-flow";
 import AuthShellLayout from "@/components/layout/auth-shell-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconSparkle } from "@/components/ui/icons";
 import { ROUTES } from "@/lib/constants";
-import { cn } from "@/lib/cn";
+import { completePlatformAccess } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { getInterviewService } from "@/services/interview";
-import {
-  aiProfileToLearningProfile,
-  generateProfileFromConversation,
-  streamInterviewReply,
-} from "@/services/ai/client";
+import { createSessionForUser, getUserById, readSession } from "@/services/auth/mock-storage";
 import type { AiChatMessage } from "@/types/ai";
-import type {
-  InterviewConversationMessage,
-  LearningProfile,
-} from "@/types/interview";
-import { useEffect, useRef, useState } from "react";
+import type { InterviewConversationMessage, LearningProfile } from "@/types/interview";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
-
-type ChatMessage = InterviewConversationMessage;
 
 export function InterviewChat() {
   const { user, refreshSession } = useAuth();
   const { isLoading, isAuthenticated } = useRequireAuth();
   const interview = getInterviewService();
+  const userId = user?.id;
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<InterviewConversationMessage[]>([]);
   const [aiHistory, setAiHistory] = useState<AiChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [isBuildingProfile, setIsBuildingProfile] = useState(false);
   const [profile, setProfile] = useState<LearningProfile | null>(null);
   const [pendingProfile, setPendingProfile] = useState<LearningProfile | null>(null);
   const [started, setStarted] = useState(false);
@@ -44,22 +34,23 @@ export function InterviewChat() {
   const [navigating, setNavigating] = useState(false);
   const [hydratedUserId, setHydratedUserId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, isTyping, profile, isBuildingProfile]);
+  }, [messages, profile]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let active = true;
 
-    void Promise.all([interview.getConversation(user.id), interview.getProfile(user.id)]).then(
+    void Promise.all([interview.getConversation(userId), interview.getProfile(userId)]).then(
       ([conversation, savedProfile]) => {
         if (!active) return;
 
-        if (user.interviewCompleted && savedProfile) {
-          window.location.assign(ROUTES.account);
+        // Never auto-navigate — user must press «انتقل للموقع».
+        if (savedProfile) {
+          setPendingProfile(savedProfile);
+          setHydratedUserId(userId);
           return;
         }
 
@@ -69,116 +60,56 @@ export function InterviewChat() {
           setStarted(conversation.started);
         }
 
-        if (savedProfile && !user.interviewCompleted) {
-          setPendingProfile(savedProfile);
-        }
-
-        setHydratedUserId(user.id);
+        setHydratedUserId(userId);
       },
     );
 
     return () => {
       active = false;
     };
-  }, [interview, user]);
+  }, [interview, userId]);
 
   useEffect(() => {
-    if (!user || hydratedUserId !== user.id || !started) return;
+    if (!userId || hydratedUserId !== userId || !started) return;
     void interview.saveConversation({
-      userId: user.id,
+      userId,
       messages,
       aiHistory,
       started,
     });
-  }, [aiHistory, hydratedUserId, interview, messages, started, user]);
+  }, [aiHistory, hydratedUserId, interview, messages, started, userId]);
 
-  async function sendToAi(history: AiChatMessage[], displayUserText?: string) {
-    if (displayUserText) {
-      setMessages((prev) => [
-        ...prev,
-        { id: `user-${Date.now()}`, role: "user", text: displayUserText },
-      ]);
-    }
+  const handleMessagesChange = useCallback(
+    (nextMessages: InterviewConversationMessage[], nextHistory: AiChatMessage[]) => {
+      setMessages(nextMessages);
+      setAiHistory(nextHistory);
+    },
+    [],
+  );
 
-    setIsTyping(true);
-    setError("");
-
-    const aiId = `ai-${Date.now()}`;
-    setMessages((prev) => [...prev, { id: aiId, role: "ai", text: "" }]);
-
-    try {
-      const { text, profileReady } = await streamInterviewReply(history, (chunk) => {
-        setMessages((prev) => prev.map((m) => (m.id === aiId ? { ...m, text: chunk } : m)));
-      });
-
-      setMessages((prev) => prev.map((m) => (m.id === aiId ? { ...m, text } : m)));
-      setAiHistory([...history, { role: "model", text }]);
-
-      if (profileReady && user) {
-        await buildProfile([...history, { role: "model", text }]);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "حدث خطأ غير متوقّع");
-      setMessages((prev) => prev.filter((m) => m.id !== aiId));
-    } finally {
-      setIsTyping(false);
-    }
-  }
-
-  async function buildProfile(history: AiChatMessage[]) {
+  async function handleProfileBuilt(built: LearningProfile) {
     if (!user) return;
 
-    setIsBuildingProfile(true);
-    setError("");
-
     try {
-      const aiProfile = await generateProfileFromConversation(history);
-      const fullProfile = aiProfileToLearningProfile(user.id, aiProfile, history);
-      const saved = await interview.saveProfileAndSync(fullProfile);
+      // Save profile only — do NOT unlock or navigate until the user presses the button.
+      const saved = await interview.saveProfileAndSync(built);
       setProfile(saved);
       setPendingProfile(null);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: "ai-profile-done",
-          role: "ai",
-          text: "تم بناء ملفك التعليمي! راجع الملخص أدناه ثم انتقل إلى حسابك.",
-        },
-      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذّر بناء الملف");
-    } finally {
-      setIsBuildingProfile(false);
     }
   }
 
-  async function startInterview() {
+  function startInterview() {
     setPendingProfile(null);
     setProfile(null);
     setMessages([]);
     setAiHistory([]);
+    setError("");
     setStarted(true);
-    await sendToAi([{ role: "user", text: "ابدأ المقابلة" }]);
   }
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || isTyping || profile || isBuildingProfile) return;
-
-    setInput("");
-    const nextHistory: AiChatMessage[] = [...aiHistory, { role: "user", text }];
-    setAiHistory(nextHistory);
-    await sendToAi(nextHistory, text);
-  }
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void handleSend();
-    }
-  }
-
-  async function goToAccount() {
+  async function enterPlatform() {
     if (!user || navigating) return;
 
     setNavigating(true);
@@ -191,16 +122,38 @@ export function InterviewChat() {
         throw new Error("أكمل المقابلة أولًا لبناء ملفك.");
       }
 
-      await interview.finalizeInterview(user.id);
+      if (!completePlatformAccess(user.id, savedProfile)) {
+        throw new Error("لم تُفتح المنصة. تأكد من السماح بالتخزين في المتصفح ثم حاول مرة أخرى.");
+      }
+
+      const stored = getUserById(user.id);
+      if (!stored?.interviewCompleted) {
+        throw new Error("تعذّر تأكيد فتح المنصة. حدّث الصفحة ثم حاول مرة أخرى.");
+      }
+
+      // Force a fresh session write so the next page load always finds the user logged in.
+      createSessionForUser(stored);
       await refreshSession();
-      window.location.assign(ROUTES.account);
+
+      const session = readSession();
+      if (!session || session.user.id !== user.id || !session.user.interviewCompleted) {
+        throw new Error("تعذّر حفظ جلسة الدخول. تأكد من السماح بالتخزين في المتصفح.");
+      }
+
+      const specialtyId = savedProfile.answers.specialtyId;
+      const destination =
+        specialtyId && typeof specialtyId === "string"
+          ? `${ROUTES.platformHome}?specialty=${encodeURIComponent(specialtyId)}`
+          : ROUTES.platformHome;
+
+      window.location.assign(destination);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذّر الانتقال إلى حسابك");
+      setError(err instanceof Error ? err.message : "تعذّر فتح المنصة");
       setNavigating(false);
     }
   }
 
-  if (isLoading || !isAuthenticated || !user || hydratedUserId !== user.id) {
+  if (isLoading) {
     return (
       <AuthShellLayout>
         <Container className="flex min-h-screen items-center justify-center py-24">
@@ -210,148 +163,116 @@ export function InterviewChat() {
     );
   }
 
-  const canInput = started && !profile && !isTyping && !isBuildingProfile;
-  const exchangeCount = messages.filter((m) => m.role === "user").length;
+  if (!isAuthenticated || !user) {
+    return (
+      <AuthShellLayout>
+        <Container className="flex min-h-screen items-center justify-center py-24">
+          <Card padding="lg" className="max-w-md border-red-200 bg-red-50 text-center">
+            <p className="text-sm font-semibold text-red-800">انتهت جلسة الدخول</p>
+            <p className="mt-2 text-sm text-red-700">
+              سجّل دخولك من جديد ثم أكمل المقابلة أو انتقل للموقع.
+            </p>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button href={ROUTES.login}>تسجيل الدخول</Button>
+            </div>
+          </Card>
+        </Container>
+      </AuthShellLayout>
+    );
+  }
+
+  if (hydratedUserId !== user.id) {
+    return (
+      <AuthShellLayout>
+        <Container className="flex min-h-screen items-center justify-center py-24">
+          <p className="text-foreground-muted">جاري تحميل المقابلة…</p>
+        </Container>
+      </AuthShellLayout>
+    );
+  }
+
+  const stepCount = messages.filter((m) => m.role === "user").length;
   const eyebrow = profile
-    ? "اكتمل — ملفك جاهز"
-    : isBuildingProfile
-      ? "جاري بناء ملفك…"
-      : started
-        ? `محادثة ذكية — ${exchangeCount.toLocaleString("ar-SA")} رسالة`
-        : "المقابلة الذكية";
+    ? "تم الانتهاء — ملفك جاهز"
+    : started
+      ? `خطوات المقابلة — ${stepCount.toLocaleString("ar-SA")}/10`
+      : "المقابلة الذكية";
 
   return (
     <InterviewShell
       eyebrow={eyebrow}
       title="المقابلة الذكية"
-      description="محادثة مع نور لفهم أهدافك واقتراح مدربين ودورات مناسبة — قبل أن تشتري ساعات وتستكشف المنصة."
+      description="خطوات منظمة مع نور — اختر إجاباتك، ووزّع ساعاتك على أيام الأسبوع، ثم راجع ملفك قبل الدخول للمنصة."
     >
-      <div className="flex min-h-[32rem] flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto p-4 sm:p-5">
-          {!started && pendingProfile ? (
-            <div className="flex h-full min-h-[24rem] flex-col items-center justify-center px-4 text-center">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border/60 bg-sage-50/50 px-4 py-3 sm:px-5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sage-500/15 text-sage-600">
+            <IconSparkle size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-navy-900">محادثة مع نور</p>
+            <p className="text-xs text-foreground-muted">{eyebrow}</p>
+          </div>
+        </div>
+
+        {!started && pendingProfile ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-6 text-center">
               <Card variant="tint" padding="md" className="max-w-md text-start">
                 <ProfileSummary profile={pendingProfile} showPlan={false} />
               </Card>
               <p className="mt-5 max-w-sm text-sm text-foreground-secondary">
-                لديك ملف محفوظ من مقابلة سابقة. يمكنك متابعة إلى حسابك أو بدء مقابلة جديدة.
+                لديك ملف محفوظ من مقابلة سابقة. انتقل للموقع أو ابدأ مقابلة جديدة.
               </p>
-              <div className="mt-6 flex w-full max-w-sm flex-col gap-3">
-                <Button size="lg" fullWidth onClick={() => void goToAccount()} disabled={navigating}>
-                  {navigating ? "جاري التحميل…" : "انتقل إلى حسابي"}
-                </Button>
-                <Button size="lg" fullWidth variant="secondary" onClick={() => void startInterview()}>
-                  بدء مقابلة جديدة
-                </Button>
-              </div>
             </div>
-          ) : !started ? (
-            <div className="flex h-full min-h-[24rem] flex-col items-center justify-center px-4 text-center">
+            <div className="shrink-0 space-y-3 border-t border-border/60 p-3 sm:p-4">
+              <Button size="lg" fullWidth onClick={() => void enterPlatform()} disabled={navigating}>
+                {navigating ? "جاري فتح المنصة…" : "انتقل للموقع"}
+              </Button>
+              <Button size="lg" fullWidth variant="secondary" onClick={startInterview}>
+                بدء مقابلة جديدة
+              </Button>
+            </div>
+          </div>
+        ) : !started ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-6 text-center">
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sage-500/15 text-sage-600">
                 <IconSparkle size={24} />
               </span>
               <p className="mt-5 max-w-sm text-sm leading-relaxed text-foreground-secondary">
-                تحدّث بحرّية بالعربية — نور تفهم أهدافك وتقترح مدربين ودورات مناسبة.
+                مقابلة منظمة بخطوات واضحة — اختر هدفك، مجالك من تخصصات المنصة، مستواك، ساعاتك
+                الأسبوعية، أيام الدراسة، ووقت البدء. نور تبني ملفك من إجاباتك الفعلية.
               </p>
-              <Button size="lg" className="mt-6" onClick={() => void startInterview()}>
-                ابدأ المحادثة
+            </div>
+            <div className="shrink-0 border-t border-border/60 p-3 sm:p-4">
+              <Button size="lg" fullWidth onClick={startInterview}>
+                ابدأ المقابلة
               </Button>
             </div>
-          ) : (
-            <>
-              {messages.map((message) => (
-                <ChatBubble key={message.id} role={message.role} text={message.text} />
-              ))}
-
-              {isTyping && messages.at(-1)?.role !== "ai" && (
-                <TypingIndicator label="نور تفكّر…" />
-              )}
-              {isBuildingProfile && <TypingIndicator label="جاري بناء ملفك…" />}
-
-              {profile && (
-                <div className="space-y-4 pt-2">
-                  <Card variant="tint" padding="md">
-                    <ProfileSummary profile={profile} />
-                  </Card>
-                  {profile.learningPlan && <LearningPlanCard plan={profile.learningPlan} />}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+          </div>
+        ) : !profile ? (
+          <InterviewStructuredFlow
+            scrollRef={scrollRef}
+            userId={user.id}
+            onMessagesChange={handleMessagesChange}
+            onProfileBuilt={(built) => void handleProfileBuilt(built)}
+            onError={setError}
+          />
+        ) : (
+          <InterviewCompletionPanel
+            profile={profile}
+            navigating={navigating}
+            onEnterPlatform={() => void enterPlatform()}
+          />
+        )}
 
         {error && (
-          <p className="border-t border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="shrink-0 border-t border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         )}
-
-        {canInput && (
-          <div className="border-t border-border/60 p-3 sm:p-4">
-            <div className="flex gap-2">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="اكتب إجابتك… (Enter للإرسال)"
-                rows={2}
-                className={cn(
-                  "flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2.5",
-                  "text-sm text-foreground placeholder:text-foreground-muted",
-                  "outline-none focus:border-sage-400/60 focus:ring-[3px] focus:ring-sage-400/12",
-                )}
-              />
-              <Button size="sm" disabled={!input.trim()} onClick={() => void handleSend()}>
-                إرسال
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {profile && (
-          <div className="border-t border-border/60 p-3 sm:p-4">
-            <Button
-              size="lg"
-              fullWidth
-              disabled={navigating}
-              onClick={() => void goToAccount()}
-            >
-              {navigating ? "جاري التحميل…" : "انتقل إلى حسابي"}
-            </Button>
-          </div>
-        )}
       </div>
     </InterviewShell>
-  );
-}
-
-function ChatBubble({ role, text }: { role: "ai" | "user"; text: string }) {
-  const isAi = role === "ai";
-
-  return (
-    <div className={cn("flex", isAi ? "justify-start" : "justify-end")}>
-      <div
-        className={cn(
-          "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap",
-          isAi ? "bg-sage-50/80 text-foreground dark:bg-surface-elevated dark:ring-1 dark:ring-border/50" : "bg-navy-900 text-[#f2eee6] dark:bg-sage-600 dark:text-white",
-        )}
-      >
-        {text}
-      </div>
-    </div>
-  );
-}
-
-function TypingIndicator({ label }: { label?: string }) {
-  return (
-    <div className="flex justify-start">
-      <div className="flex items-center gap-2 rounded-2xl bg-sage-50/80 px-3.5 py-2.5 dark:bg-surface-elevated dark:ring-1 dark:ring-border/50">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sage-400 [animation-delay:0ms]" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sage-400 [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sage-400 [animation-delay:300ms]" />
-        {label && <span className="text-xs text-sage-600">{label}</span>}
-      </div>
-    </div>
   );
 }

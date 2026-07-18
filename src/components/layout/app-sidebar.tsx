@@ -15,11 +15,13 @@ import {
   IconSparkle,
   IconSun,
   IconUser,
+  IconUsers,
   IconWallet,
 } from "@/components/ui/icons";
 import { ROUTES, SITE } from "@/lib/constants";
 import { formatHoursAndMinutes } from "@/lib/format/duration";
 import { cn } from "@/lib/cn";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { useWalletOptional } from "@/providers/wallet-provider";
 import { useModal } from "@/providers/modal-provider";
@@ -48,6 +50,7 @@ const APP_NAV: Array<{
   { href: ROUTES.activity, label: "سجل التعلّم", icon: IconBook },
   { href: ROUTES.progress, label: "إنجازاتي", icon: IconFlame },
   { href: ROUTES.courses, label: "الدورات", icon: IconCompass },
+  { href: ROUTES.trainers, label: "المدربين", icon: IconUsers },
   { href: ROUTES.favorites, label: "المفضّلة", icon: IconHeart },
   { href: ROUTES.noor, label: "نور", icon: IconSparkle },
   { href: ROUTES.wallet, label: "المحفظة", icon: IconWallet },
@@ -75,9 +78,16 @@ export function AppSidebar() {
     };
   }, [mobileOpen]);
 
+  const interviewDone = user ? isInterviewCompleteForUser(user) : false;
+
   const links = APP_NAV.filter((item) => {
-    if (item.showBeforeInterview) return !user?.interviewCompleted;
-    return true;
+    if (!isAuthenticated || !user) {
+      return item.href === ROUTES.courses;
+    }
+    if (!interviewDone) {
+      return Boolean(item.showBeforeInterview) || item.href === ROUTES.account;
+    }
+    return !item.showBeforeInterview;
   });
 
   return (
@@ -140,6 +150,7 @@ export function AppSidebar() {
               const active =
                 pathname === item.href ||
                 (item.href === ROUTES.courses && pathname.startsWith(`${ROUTES.courses}/`)) ||
+                (item.href === ROUTES.trainers && pathname.startsWith(`${ROUTES.trainers}/`)) ||
                 (item.href === ROUTES.activity &&
                   (pathname.startsWith("/learn/") || pathname.startsWith("/review/")));
               return (

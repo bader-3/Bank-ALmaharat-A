@@ -6,47 +6,85 @@ import { CoursesFairnessNotice } from "@/components/courses/courses-fairness-not
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconCompass, IconSparkle } from "@/components/ui/icons";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
+import { getAiRecommendedCourses } from "@/lib/courses/ai-recommendations";
+import { getSpecialtyById } from "@/lib/courses/mock-data";
+import { filterCourses } from "@/lib/courses/recommendations";
 import { useAuth } from "@/providers/auth-provider";
 import { getInterviewService } from "@/services/interview";
-import { getAiRecommendedCourses } from "@/lib/courses/ai-recommendations";
-import { filterCourses } from "@/lib/courses/recommendations";
-import type { CourseFilters } from "@/types/course";
+import { PROFILE_CHANGED_EVENT } from "@/lib/interview/update-learning-profile";
 import type { RecommendedCourse } from "@/lib/courses/ai-recommendations";
+import type { CourseFilters } from "@/types/course";
 import { useEffect, useMemo, useState } from "react";
 
-export function CoursesDiscovery() {
+type CoursesDiscoveryProps = {
+  initialSpecialtyId?: string;
+};
+
+export function CoursesDiscovery({ initialSpecialtyId }: CoursesDiscoveryProps) {
   const { user } = useAuth();
+  const validInitialSpecialty =
+    initialSpecialtyId && getSpecialtyById(initialSpecialtyId) ? initialSpecialtyId : undefined;
+
   const [filters, setFilters] = useState<CourseFilters>({
-    specialtyId: "all",
+    specialtyId: validInitialSpecialty ?? "all",
     level: "all",
     deliveryMode: "all",
     query: "",
   });
   const [recommended, setRecommended] = useState<RecommendedCourse[]>([]);
+  const [profileSpecialtyName, setProfileSpecialtyName] = useState<string | null>(null);
 
   const courses = useMemo(() => filterCourses(filters), [filters]);
+  const interviewComplete = user ? isInterviewCompleteForUser(user) : false;
 
   useEffect(() => {
     let active = true;
 
-    async function loadRecommendations() {
-      if (!user?.interviewCompleted) {
+    async function loadProfileFilters() {
+      if (!user || !interviewComplete) {
         setRecommended([]);
+        setProfileSpecialtyName(null);
         return;
       }
+
       const profile = await getInterviewService().getProfile(user.id);
       if (!active) return;
+
       setRecommended(getAiRecommendedCourses(profile, 4));
+
+      const specialtyId = profile?.answers?.specialtyId;
+      if (!specialtyId || !getSpecialtyById(specialtyId)) return;
+
+      setProfileSpecialtyName(getSpecialtyById(specialtyId)?.name ?? null);
+
+      // Prefer URL specialty; otherwise apply profile specialty once.
+      if (!validInitialSpecialty) {
+        setFilters((current) =>
+          current.specialtyId === "all" || current.specialtyId !== specialtyId
+            ? { ...current, specialtyId }
+            : current,
+        );
+      }
     }
 
-    void loadRecommendations();
+    void loadProfileFilters();
+
+    const handleProfileChanged = (event: Event) => {
+      const changedUserId = (event as CustomEvent<{ userId?: string }>).detail?.userId;
+      if (changedUserId && user && changedUserId !== user.id) return;
+      void loadProfileFilters();
+    };
+
+    window.addEventListener(PROFILE_CHANGED_EVENT, handleProfileChanged);
     return () => {
       active = false;
+      window.removeEventListener(PROFILE_CHANGED_EVENT, handleProfileChanged);
     };
-  }, [user]);
+  }, [user, interviewComplete, validInitialSpecialty]);
 
   const recommendedIds = useMemo(() => new Set(recommended.map((r) => r.course.id)), [recommended]);
-  const showRecommended = Boolean(user?.interviewCompleted && recommended.length > 0);
+  const showRecommended = Boolean(interviewComplete && recommended.length > 0);
   const otherCourses = useMemo(
     () =>
       showRecommended
@@ -54,6 +92,12 @@ export function CoursesDiscovery() {
         : courses,
     [courses, recommendedIds, showRecommended],
   );
+
+  const specialtyFilter = filters.specialtyId;
+  const activeSpecialtyName =
+    specialtyFilter && specialtyFilter !== "all"
+      ? (getSpecialtyById(specialtyFilter)?.name ?? profileSpecialtyName)
+      : null;
 
   return (
     <Container className="py-10 lg:py-14">
@@ -64,7 +108,9 @@ export function CoursesDiscovery() {
         </div>
         <h1 className="mt-3 text-3xl font-bold text-navy-900 lg:text-4xl">الدورات</h1>
         <p className="mt-2 text-pretty text-foreground-secondary">
-          استكشف مدربين ودورات بساعات قليلة — قرارك يأتي بعد التجربة، والشهادة بعد الإكمال.
+          {activeSpecialtyName
+            ? `عرض دورات «${activeSpecialtyName}» حسب ملفك — يمكنك تغيير الفلتر في أي وقت.`
+            : "استكشف مدربين ودورات بساعات قليلة — قرارك يأتي بعد التجربة، والشهادة بعد الإكمال."}
         </p>
         <CoursesFairnessNotice />
       </div>

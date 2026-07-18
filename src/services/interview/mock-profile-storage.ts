@@ -2,6 +2,7 @@ import type { InterviewConversation, LearningProfile } from "@/types/interview";
 import { isBrowser, logFirestoreError } from "@/services/firebase/common";
 import { saveCloudInterviewConversation } from "@/services/firebase/interview-conversations";
 import { saveCloudLearningProfile } from "@/services/firebase/user-profiles";
+import { notifyProfileChanged } from "@/lib/interview/update-learning-profile";
 
 const PROFILES_KEY = "asb-profiles";
 const CONVERSATIONS_KEY = "asb-interview-conversations";
@@ -42,6 +43,7 @@ function persistProfile(profile: LearningProfile): LearningProfile {
   const profiles = readProfiles();
   profiles[profile.userId] = profile;
   writeProfiles(profiles);
+  notifyProfileChanged(profile.userId);
   if (isBrowser()) {
     void saveCloudLearningProfile(profile).catch((error) => {
       console.error("[Firestore] تعذّر حفظ الملف التعليمي:", error);
@@ -54,6 +56,7 @@ async function persistProfileAsync(profile: LearningProfile): Promise<LearningPr
   const profiles = readProfiles();
   profiles[profile.userId] = profile;
   writeProfiles(profiles);
+  notifyProfileChanged(profile.userId);
 
   if (isBrowser()) {
     try {

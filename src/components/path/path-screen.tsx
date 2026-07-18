@@ -7,24 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { IconPath, IconSparkle } from "@/components/ui/icons";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 import { ROUTES } from "@/lib/constants";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
-import { useAuth } from "@/providers/auth-provider";
+import { loadPlanningSessionLocalFirst } from "@/lib/noor/load-planning-session";
 import { getGoalsService } from "@/services/goals";
 import { getInterviewService } from "@/services/interview";
 import { getLearningService } from "@/services/learning";
-import { getNoorService } from "@/services/noor";
 import type { Enrollment } from "@/types/learning";
 import type { LearningProfile } from "@/types/interview";
 import type { GoalPlan } from "@/types/goals";
 import type { PlanningSession } from "@/types/noor";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export function PathScreen() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   const { isAuthenticated } = useRequireAuth();
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<PlanningSession | null>(null);
@@ -36,7 +34,7 @@ export function PathScreen() {
     if (!user) return;
     setLoading(true);
     const [planningSession, plan, userProfile, userEnrollments] = await Promise.all([
-      getNoorService().getPlanningSession(user.id),
+      loadPlanningSessionLocalFirst(user.id),
       getGoalsService().getPlan(user.id, false),
       getInterviewService().getProfile(user.id),
       getLearningService().getEnrollments(user.id),
@@ -49,13 +47,9 @@ export function PathScreen() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void load();
-  }, [user, router, load]);
+  }, [interviewReady, user, load]);
 
   const aiGoalsByCourse = useMemo(() => {
     const aiGoals = goalPlan.goals.filter((g) => g.source === "ai" && g.courseSlug);
@@ -69,7 +63,7 @@ export function PathScreen() {
     return map;
   }, [goalPlan.goals]);
 
-  if (authLoading || !isAuthenticated || !user || loading) {
+  if (authLoading || !isAuthenticated || !user || !interviewReady || loading) {
     return (
       <Container className="py-24">
         <p className="type-body text-center text-foreground-muted">جاري تحميل مسارك…</p>

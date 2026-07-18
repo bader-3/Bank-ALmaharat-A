@@ -1,8 +1,7 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { IconArrow } from "@/components/ui/icons";
+import { IconArrow, IconSparkle } from "@/components/ui/icons";
 import { usePrimaryCta } from "@/hooks/use-primary-cta";
 import { ROUTES } from "@/lib/constants";
 import { useAuth } from "@/providers/auth-provider";
@@ -28,31 +27,31 @@ export function HeroActions() {
   }
 
   return (
-    <div className="animate-reveal-delay-3 mt-9 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-      <Button href={cta.href} size="lg">
-        {cta.label}
-        <IconArrow className="transition-transform duration-300 group-hover/btn:-translate-x-0.5" />
-      </Button>
-      <Button href="#how-it-works" variant="secondary" size="lg">
-        كيف يعمل
-      </Button>
+    <div className="animate-reveal-delay-3 mt-9 flex w-fit max-w-full flex-col gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Button href={cta.href} size="lg">
+          {cta.label}
+          <IconArrow className="transition-transform duration-300 group-hover/btn:-translate-x-0.5" />
+        </Button>
+        <Button href="#how-it-works" variant="secondary" size="lg">
+          كيف يعمل
+        </Button>
+      </div>
+
       {!isAuthenticated && (
-        <div className="flex flex-col gap-1.5 sm:ms-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="lg"
-            disabled={isDemoLoading}
-            onClick={() => void handleDemoLogin()}
-            className="border border-dashed border-gold-500/35 bg-gold-500/[0.05]"
-          >
-            {isDemoLoading ? "جاري التجهيز…" : "جرّب كحساب تجريبي"}
-          </Button>
-          <span className="inline-flex items-center gap-1.5 text-xs text-foreground-muted">
-            <Badge variant="gold">تجريبي</Badge>
-            دخول فوري للعرض — بدون تسجيل
-          </span>
-        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
+          fullWidth
+          disabled={isDemoLoading}
+          onClick={() => void handleDemoLogin()}
+          className="border-sage-200/80 bg-sage-50/70 text-navy-900 hover:border-sage-300 hover:bg-sage-100/80"
+          title="دخول فوري للعرض — بدون تسجيل"
+        >
+          <IconSparkle size={18} className="text-sage-400" />
+          {isDemoLoading ? "جاري التجهيز…" : "جرّب كحساب تجريبي"}
+        </Button>
       )}
     </div>
   );

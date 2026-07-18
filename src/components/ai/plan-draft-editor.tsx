@@ -252,7 +252,7 @@ export function PlanDraftEditor({
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-5">
           <div className="flex flex-wrap gap-2">
             <Button onClick={onAccept} disabled={isAccepting || activeCourses.length === 0}>
-              {isAccepting ? "جاري الاعتماد…" : "اعتماد الخطة وإضافة الأهداف"}
+              {isAccepting ? "جاري الاعتماد…" : "اعتماد الخطة"}
             </Button>
             <Button variant="ghost" onClick={onReject}>
               رفض المسودة

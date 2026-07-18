@@ -16,31 +16,33 @@ import {
   IconSparkle,
   IconTarget,
 } from "@/components/ui/icons";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
-import { computeStreak } from "@/lib/goals/streak";
 import { ROUTES } from "@/lib/constants";
 import { cn } from "@/lib/cn";
-import { useAuth } from "@/providers/auth-provider";
+import { computeStreak } from "@/lib/goals/streak";
+import { formatLearningInterest } from "@/lib/interview/steps";
 import { getGoalsService, toDateKey } from "@/services/goals";
 import { getInterviewService } from "@/services/interview";
+import { getLearningService } from "@/services/learning";
 import { getRemindersService } from "@/services/reminders";
 import type { GoalInput, GoalPlan, LearningGoal } from "@/types/goals";
 import type { LearningProfile } from "@/types/interview";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 const EMPTY_PLAN: GoalPlan = { goals: [] };
 
 export function GoalsScreen() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   const { isAuthenticated } = useRequireAuth();
   const goalsService = useMemo(() => getGoalsService(), []);
   const remindersService = useMemo(() => getRemindersService(), []);
+  const learningService = useMemo(() => getLearningService(), []);
   const today = toDateKey(new Date());
 
   const [plan, setPlan] = useState<GoalPlan>(EMPTY_PLAN);
   const [profile, setProfile] = useState<LearningProfile | null>(null);
+  const [enrollmentCount, setEnrollmentCount] = useState(0);
   const [selectedDate, setSelectedDate] = useState(today);
   const [editingGoal, setEditingGoal] = useState<LearningGoal | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -56,23 +58,21 @@ export function GoalsScreen() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [nextPlan, nextProfile] = await Promise.all([
-      goalsService.getPlan(user.id),
+    const [nextProfile, enrollments] = await Promise.all([
       getInterviewService().getProfile(user.id),
+      learningService.getEnrollments(user.id),
     ]);
+    const nextPlan = await goalsService.getPlan(user.id);
     setPlan(nextPlan);
     setProfile(nextProfile);
+    setEnrollmentCount(enrollments.length);
     setLoading(false);
-  }, [user, goalsService]);
+  }, [user, goalsService, learningService]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void load();
-  }, [user, router, load]);
+  }, [interviewReady, user, load]);
 
   useEffect(() => {
     if (!user) return;
@@ -129,13 +129,27 @@ export function GoalsScreen() {
     await load();
   }
 
-  if (authLoading || !isAuthenticated || !user || loading) {
+  if (authLoading || !isAuthenticated || !user || !interviewReady || loading) {
     return (
       <Container className="py-24">
         <p className="type-body text-center text-foreground-muted">جاري تجهيز أهدافك…</p>
       </Container>
     );
   }
+
+  // بعد المقابلة: لا أهداف مسار بدون شراء درس/دورة — حتى لو وُجدت أهداف شخصية
+  const hasAiGoals = plan.goals.some((goal) => goal.source === "ai");
+  const needsCourseToBuildGoals = enrollmentCount === 0 && !hasAiGoals;
+  const showGoalsWorkspace = !needsCourseToBuildGoals || plan.goals.length > 0;
+  const profileInterest = profile
+    ? formatLearningInterest({
+        learningTopic: profile.answers?.learningTopic,
+        learningFocus: profile.answers?.learningFocus,
+      })
+    : "—";
+  const studyDaysLabel = profile?.answers?.availableDays?.length
+    ? profile.answers.availableDays.join("، ")
+    : null;
 
   return (
     <Container className="py-10 lg:py-14">
@@ -150,17 +164,77 @@ export function GoalsScreen() {
             أنجز خطوات صغيرة كل يوم، وتابع تقدّمك في التقويم الشهري.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditingGoal(null);
-            setShowForm(true);
-          }}
-        >
-          <IconPlus size={18} />
-          إضافة هدف
-        </Button>
+        {showGoalsWorkspace && (
+          <Button
+            onClick={() => {
+              setEditingGoal(null);
+              setShowForm(true);
+            }}
+          >
+            <IconPlus size={18} />
+            إضافة هدف
+          </Button>
+        )}
       </div>
 
+      {needsCourseToBuildGoals && (
+        <Card padding="lg" className="mt-8 border-sage-200/70 bg-sage-50/50">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex items-center gap-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sage-500/15 text-sage-700">
+                  <IconTarget size={20} />
+                </span>
+                <p className="text-xs font-semibold tracking-wide text-sage-700">ملفّك جاهز — والأهداف تنتظر دورتك</p>
+              </div>
+              <h2 className="mt-4 text-xl font-bold text-navy-900 lg:text-2xl">
+                أهدافك اليومية تُبنى بعد شراء أول دورة أو درس
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-foreground-secondary">
+                مقابلتك حدّدت مجالك
+                {profileInterest !== "—" ? ` («${profileInterest}»)` : ""}
+                {studyDaysLabel ? ` وأيام دراستك (${studyDaysLabel})` : ""}
+                وساعاتك الأسبوعية. هذا الجدول محفوظ في ملفك التعليمي.
+              </p>
+              <p className="mt-3 text-sm leading-relaxed text-foreground-secondary">
+                لكن الأهداف في التقويم لا تُنشأ من الملف وحده — لأنها مرتبطة بدروس حقيقية.
+                عندما تشتري دورة أو درسًا يناسب ملفك، تقوم{" "}
+                <strong className="font-semibold text-navy-900">نور</strong> بربط
+                الدروس بأهداف يومية على أيامك وساعاتك التي اخترتها في المقابلة.
+              </p>
+              <ol className="mt-4 space-y-2 text-sm text-foreground-secondary">
+                <li className="flex gap-2">
+                  <span className="font-semibold text-sage-700">1.</span>
+                  <span>استكشف الدورات واختر ما يناسب مجالك.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-sage-700">2.</span>
+                  <span>اشترِ الدورة أو درسًا منها من محفظة الساعات.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-sage-700">3.</span>
+                  <span>نور تربط الدروس بأهدافك في هذا التقويم وفق ملفك التعليمي.</span>
+                </li>
+              </ol>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+              <Button href={ROUTES.courses} size="lg">
+                استكشف الدورات
+              </Button>
+              <Button href={ROUTES.wallet} size="lg" variant="secondary">
+                اشترِ ساعات أولًا
+              </Button>
+              <Button href={ROUTES.noor} size="lg" variant="secondary">
+                <IconSparkle size={18} />
+                اسأل نور عن دورة مناسبة
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {showGoalsWorkspace && (
+      <>
       <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="أهداف اليوم"
@@ -347,21 +421,6 @@ export function GoalsScreen() {
               <IconArrow size={16} />
             </button>
           )}
-
-          {!plan.acceptedPlanKey && profile?.learningPlan && (
-            <Card padding="lg" className="mt-5 border-sage-200/60 bg-sage-50/40">
-              <p className="text-xs font-semibold text-sage-600">خطة المساعد جاهزة</p>
-              <h3 className="mt-2 text-lg font-semibold text-navy-900">
-                اعتمد خطتك لإضافة أهداف يومية تلقائيًا
-              </h3>
-              <p className="mt-2 text-foreground-secondary">
-                ستبقى أهدافك الشخصية محفوظة، وسيضيف المساعد خطوات الخطة إلى التقويم.
-              </p>
-              <Button href={ROUTES.account} size="sm" className="mt-5">
-                مراجعة الخطة واعتمادها
-              </Button>
-            </Card>
-          )}
         </section>
 
         <aside className="grid gap-4 md:grid-cols-2 xl:sticky xl:top-24 xl:self-start">
@@ -377,6 +436,8 @@ export function GoalsScreen() {
           />
         </aside>
       </div>
+      </>
+      )}
     </Container>
   );
 }

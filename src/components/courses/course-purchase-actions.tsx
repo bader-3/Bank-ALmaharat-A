@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { shouldRedirectToInterview } from "@/lib/auth/interview-access";
 import { ROUTES } from "@/lib/constants";
 import { formatHoursAndMinutes, hasEnoughHours } from "@/lib/format/duration";
 import {
@@ -73,7 +74,7 @@ export function CoursePurchaseActions({ course, firstLessonHours }: CoursePurcha
       router.push(ROUTES.register);
       return false;
     }
-    if (!user?.interviewCompleted) {
+    if (user && shouldRedirectToInterview(user)) {
       router.push(ROUTES.interview);
       return false;
     }

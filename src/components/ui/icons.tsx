@@ -156,6 +156,17 @@ export function IconUser({ size = ICON_SIZE, ...props }: IconProps) {
   );
 }
 
+export function IconUsers({ size = ICON_SIZE, ...props }: IconProps) {
+  return (
+    <IconBase size={size} {...props}>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 19c0-3 2.5-5 6-5" />
+      <circle cx="16" cy="8.5" r="2.5" />
+      <path d="M13 19c0-2.5 2-4.5 5-4.5 1.2 0 2.3.4 3.1 1" />
+    </IconBase>
+  );
+}
+
 /* ——— UI controls ——— */
 export function IconSun({ size = 20, ...props }: IconProps) {
   return (

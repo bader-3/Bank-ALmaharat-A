@@ -3,14 +3,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { IconCheck, IconSparkle } from "@/components/ui/icons";
+import { IconSparkle } from "@/components/ui/icons";
 import { ROUTES } from "@/lib/constants";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
 import { getPackageById, formatPrice } from "@/lib/wallet/packages";
-import { useAuth } from "@/providers/auth-provider";
-import { getGoalsService, getLearningPlanKey } from "@/services/goals";
 import type { LearningPlan } from "@/types/ai";
-import { useEffect, useState } from "react";
 
 interface LearningPlanCardProps {
   plan: LearningPlan;
@@ -18,27 +15,7 @@ interface LearningPlanCardProps {
 }
 
 export function LearningPlanCard({ plan, compact }: LearningPlanCardProps) {
-  const { user } = useAuth();
   const pkg = getPackageById(plan.suggestedPackageId);
-  const [isAccepted, setIsAccepted] = useState(false);
-  const [isAccepting, setIsAccepting] = useState(false);
-
-  useEffect(() => {
-    if (!user) return;
-    void getGoalsService()
-      .getPlan(user.id, false)
-      .then((goalPlan) => {
-        setIsAccepted(goalPlan.acceptedPlanKey === getLearningPlanKey(plan));
-      });
-  }, [user, plan]);
-
-  async function handleAccept() {
-    if (!user || isAccepting) return;
-    setIsAccepting(true);
-    await getGoalsService().acceptLearningPlan(user.id, plan);
-    setIsAccepted(true);
-    setIsAccepting(false);
-  }
 
   return (
     <Card padding="md" className="border-sage-200/50 bg-sage-50/30">
@@ -68,12 +45,16 @@ export function LearningPlanCard({ plan, compact }: LearningPlanCardProps) {
                 <p className="type-card-title mt-1 text-foreground">
                   {course?.title ?? week.title}
                 </p>
-                <p className="type-small mt-1 text-foreground-secondary">{week.focus}</p>
+                <p className="type-small mt-2 text-foreground-secondary">{week.focus}</p>
               </li>
             );
           })}
         </ol>
       )}
+
+      <p className="type-small mt-4 text-foreground-secondary">
+        الأهداف اليومية في التقويم تُنشأ بعد شراء دروس من الدورات المقترحة — وفق أيام دراستك في الملف.
+      </p>
 
       {pkg && (
         <div className="mt-4 rounded-sm border border-gold-200/60 bg-gold-50/45 px-4 py-3">
@@ -82,30 +63,25 @@ export function LearningPlanCard({ plan, compact }: LearningPlanCardProps) {
             {pkg.name} — {pkg.hours} س ({formatPrice(pkg.price)})
           </p>
           <p className="type-small mt-2 text-foreground-secondary">{plan.packageReason}</p>
-          <Button href={ROUTES.wallet} size="sm" className="mt-3">
-            شراء الباقة
-          </Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button href={ROUTES.wallet} size="sm">
+              شراء الباقة
+            </Button>
+            <Button href={ROUTES.courses} size="sm" variant="secondary">
+              استكشف الدورات
+            </Button>
+          </div>
         </div>
       )}
 
-      {!compact && user && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          {isAccepted ? (
-            <>
-              <Badge variant="sage">
-                <IconCheck size={14} />
-                تمت إضافة الخطة إلى أهدافك
-              </Badge>
-              <Button href={ROUTES.goals} size="sm">
-                فتح أهدافي
-              </Button>
-            </>
-          ) : (
-            <Button size="sm" onClick={handleAccept} disabled={isAccepting}>
-              <IconSparkle size={16} />
-              {isAccepting ? "جاري إعداد الأهداف…" : "اعتماد الخطة وإضافة الأهداف"}
-            </Button>
-          )}
+      {!compact && !pkg && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button href={ROUTES.courses} size="sm">
+            استكشف الدورات
+          </Button>
+          <Button href={ROUTES.wallet} size="sm" variant="secondary">
+            شحن المحفظة
+          </Button>
         </div>
       )}
     </Card>

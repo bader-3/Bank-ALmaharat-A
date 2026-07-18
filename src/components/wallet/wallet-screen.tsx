@@ -17,6 +17,7 @@ import {
 import { ROUTES } from "@/lib/constants";
 import { formatHoursAndMinutes } from "@/lib/format/duration";
 import { cn } from "@/lib/cn";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { useWallet } from "@/providers/wallet-provider";
 import { getInterviewService } from "@/services/interview";
@@ -235,7 +236,7 @@ export function WalletScreen() {
         <Button href={ROUTES.courses} variant="secondary" size="lg">
           استكشف الدورات
         </Button>
-        {!user.interviewCompleted && (
+        {user && !isInterviewCompleteForUser(user) && (
           <Button href={ROUTES.interview} variant="ghost" size="lg">
             أكمل ملفك أولًا
           </Button>

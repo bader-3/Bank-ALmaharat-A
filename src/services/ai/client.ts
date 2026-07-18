@@ -1,5 +1,6 @@
 import type { AiChatMessage, AiGeneratedProfile } from "@/types/ai";
 import type { AssistantContext } from "@/lib/ai/prompts";
+import type { StructuredInterviewDraft } from "@/lib/interview/steps";
 import type { LearningProfile } from "@/types/interview";
 
 const PROFILE_READY_MARKER = "[PROFILE_READY]";
@@ -67,10 +68,11 @@ export async function streamInterviewReply(
 
 export async function generateProfileFromConversation(
   messages: AiChatMessage[],
+  structured?: StructuredInterviewDraft,
 ): Promise<AiGeneratedProfile> {
   const data = await postJson<{ profile: AiGeneratedProfile }>(
     "/api/ai/profile",
-    { messages },
+    { messages, structured },
     "فشل بناء الملف التعليمي",
   );
   return data.profile;

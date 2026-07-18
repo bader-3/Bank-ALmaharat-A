@@ -25,7 +25,10 @@ function readRaw(): unknown {
 function isLegacyStore(data: unknown): data is LegacyWalletStore {
   if (!data || typeof data !== "object") return false;
   const values = Object.values(data as Record<string, unknown>);
-  return values.length === 0 || values.every((v) => typeof v === "number");
+  // Empty {} is the normal empty store — NOT legacy. Treating it as legacy
+  // rewrites localStorage on every read and fires asb-wallet-changed forever.
+  if (values.length === 0) return false;
+  return values.every((v) => typeof v === "number");
 }
 
 function migrateLegacy(legacy: LegacyWalletStore): WalletStore {
@@ -53,7 +56,10 @@ function readStore(): WalletStore {
 
 function writeStore(store: WalletStore) {
   if (!isBrowser()) return;
-  window.localStorage.setItem(WALLET_KEY, JSON.stringify(store));
+  const payload = JSON.stringify(store);
+  const previous = window.localStorage.getItem(WALLET_KEY);
+  if (previous === payload) return;
+  window.localStorage.setItem(WALLET_KEY, payload);
   window.dispatchEvent(new CustomEvent("asb-wallet-changed"));
 }
 

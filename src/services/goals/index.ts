@@ -1,5 +1,7 @@
+import { addDays, resolveAvailableDayIndexes, scheduleOnAvailableDays } from "@/lib/goals/weekdays";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
 import { getLessonsForCourse } from "@/lib/learning/lessons";
+import { mockWriteDelay } from "@/lib/mock-delay";
 import type { LearningPlan } from "@/types/ai";
 import type { GoalInput, GoalPlan, LearningGoal } from "@/types/goals";
 import type { PlanDraft } from "@/types/noor";
@@ -12,7 +14,8 @@ import {
   toggleGoalComplete,
   updateGoal,
 } from "@/services/goals/mock-goals-storage";
-import { mockWriteDelay } from "@/lib/mock-delay";
+import { readLearningProfile } from "@/services/interview/mock-profile-storage";
+import { getEnrollmentsForUser } from "@/services/learning/mock-enrollment-storage";
 
 export interface GoalsService {
   getPlan(userId: string, carryOver?: boolean): Promise<GoalPlan>;
@@ -31,12 +34,6 @@ export function toDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
 export function getLearningPlanKey(plan: LearningPlan) {
   return JSON.stringify({
     totalWeeks: plan.totalWeeks,
@@ -50,34 +47,58 @@ export function getLearningPlanKey(plan: LearningPlan) {
   });
 }
 
-function buildGoalsFromPlan(plan: LearningPlan, acceptedAt: Date): LearningGoal[] {
+/**
+ * Builds daily goals from a learning plan — only on the learner's available days.
+ * Prefer purchased-lesson sync for production calendars; kept for tests / legacy.
+ */
+export function buildGoalsFromPlan(
+  plan: LearningPlan,
+  acceptedAt: Date,
+  availableDays?: string[],
+  startTime = "18:00",
+): LearningGoal[] {
   const createdAt = acceptedAt.toISOString();
+  const dayIndexes = resolveAvailableDayIndexes(availableDays);
+  let lessonIndex = 0;
 
-  return plan.weeks.flatMap((week, weekIndex) => {
+  return plan.weeks.flatMap((week) => {
     const course = getCourseBySlug(week.courseSlug);
     const courseTitle = course?.title ?? week.title;
     const lessons = course
       ? getLessonsForCourse(course)
       : [{ id: `${week.courseSlug}-focus`, title: week.focus, durationMinutes: week.hours * 60 }];
-    const minutesPerDay = Math.max(15, Math.round((week.hours * 60) / 7));
 
-    return Array.from({ length: 7 }, (_, dayIndex): LearningGoal => {
-      const lesson = lessons[dayIndex % lessons.length];
-      const scheduledDate = toDateKey(addDays(acceptedAt, weekIndex * 7 + dayIndex));
+    const slotsPerWeek = Math.max(1, dayIndexes.length || 1);
+    const minutesPerSlot = Math.max(15, Math.round((week.hours * 60) / slotsPerWeek));
+
+    return Array.from({ length: slotsPerWeek }, (_, slotIndex): LearningGoal => {
+      const lesson = lessons[slotIndex % lessons.length];
+      const scheduledDate = dayIndexes.length
+        ? toDateKey(scheduleOnAvailableDays(lessonIndex++, availableDays, acceptedAt))
+        : toDateKey(addDays(acceptedAt, lessonIndex++));
+
       return {
-        id: `ai_${week.week}_${dayIndex + 1}_${week.courseSlug}`,
-        title: dayIndex < lessons.length ? lesson.title : `تطبيق ومراجعة — ${courseTitle}`,
+        id: `ai_${week.week}_${slotIndex + 1}_${week.courseSlug}`,
+        title: slotIndex < lessons.length ? lesson.title : `تطبيق ومراجعة — ${courseTitle}`,
         description: week.focus,
         courseSlug: week.courseSlug,
-        durationMinutes: minutesPerDay,
+        durationMinutes: minutesPerSlot,
         source: "ai",
         originalDate: scheduledDate,
         scheduledDate,
-        startTime: "18:00",
+        startTime,
         createdAt,
       };
     });
   });
+}
+
+function purchasedLessonKeys(userId: string) {
+  return new Set(
+    getEnrollmentsForUser(userId).flatMap((enrollment) =>
+      enrollment.purchasedLessons.map((lessonId) => `${enrollment.courseSlug}:${lessonId}`),
+    ),
+  );
 }
 
 export class MockGoalsService implements GoalsService {
@@ -87,26 +108,30 @@ export class MockGoalsService implements GoalsService {
       : getGoalPlan(userId);
   }
 
-  async acceptLearningPlan(userId: string, plan: LearningPlan, replaceExisting = false) {
-    await mockWriteDelay(80);
-    const acceptedAt = new Date();
-    return replaceWithAcceptedPlan(
-      userId,
-      replaceExisting
-        ? `${getLearningPlanKey(plan)}:${acceptedAt.toISOString()}`
-        : getLearningPlanKey(plan),
-      acceptedAt.toISOString(),
-      buildGoalsFromPlan(plan, acceptedAt),
-    );
+  /**
+   * اعتماد خطة المقابلة لم يعد ينشئ أهداف تقويم بدون شراء.
+   * الأهداف اليومية تُبنى عبر sync بعد شراء الدروس.
+   */
+  async acceptLearningPlan(userId: string, _plan: LearningPlan, _replaceExisting = false) {
+    await mockWriteDelay(40);
+    return getGoalPlan(userId);
   }
 
   async acceptPlanDraft(userId: string, draft: PlanDraft, replaceExisting = false) {
     await mockWriteDelay(80);
     const acceptedAt = new Date();
+    const purchased = purchasedLessonKeys(userId);
+    const createdAt = acceptedAt.toISOString();
+
+    // فقط الدروس المشتراة تدخل التقويم — باقي الخطة تبقى في المسار/الملف
+    const scheduledItems = draft.schedule.filter((item) =>
+      purchased.has(`${item.courseSlug}:${item.lessonId}`),
+    );
+
     const acceptedPlanKey = JSON.stringify({
       draftId: draft.id,
       updatedAt: draft.updatedAt,
-      schedule: draft.schedule.map(
+      schedule: scheduledItems.map(
         ({ courseSlug, lessonId, scheduledDate, startTime, durationMinutes }) => ({
           courseSlug,
           lessonId,
@@ -116,9 +141,17 @@ export class MockGoalsService implements GoalsService {
         }),
       ),
     });
-    const createdAt = acceptedAt.toISOString();
-    const goals = draft.schedule.map(
-      (item): LearningGoal => ({
+
+    const profile = readLearningProfile(userId);
+    const availableDays = draft.availableDays.length
+      ? draft.availableDays
+      : profile?.answers.availableDays;
+
+    const goals = scheduledItems.map((item, index): LearningGoal => {
+      const onStudyDay = availableDays?.length
+        ? toDateKey(scheduleOnAvailableDays(index, availableDays, acceptedAt))
+        : item.scheduledDate;
+      return {
         id: `ai_${item.courseSlug}_${item.lessonId}`,
         title: item.title,
         description: `الأسبوع ${item.week} · ${item.day}`,
@@ -126,12 +159,13 @@ export class MockGoalsService implements GoalsService {
         lessonId: item.lessonId,
         durationMinutes: item.durationMinutes,
         source: "ai",
-        originalDate: item.scheduledDate,
-        scheduledDate: item.scheduledDate,
+        originalDate: onStudyDay,
+        scheduledDate: onStudyDay,
         startTime: item.startTime,
         createdAt,
-      }),
-    );
+      };
+    });
+
     return replaceWithAcceptedPlan(
       userId,
       replaceExisting ? `${acceptedPlanKey}:${createdAt}` : acceptedPlanKey,

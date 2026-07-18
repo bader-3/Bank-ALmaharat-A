@@ -28,12 +28,56 @@ const DOMAIN_TERMS: Record<string, string[]> = {
 
 const LEVEL_RANK = { beginner: 0, intermediate: 1, advanced: 2 } as const;
 
+const ENGLISH_TRACK_TERMS = [
+  "انجليزي",
+  "الإنجليزي",
+  "english",
+  "ielts",
+  "toefl",
+  "b1",
+  "b2",
+  "c1",
+  "email",
+  "emails",
+  "مهني للتواصل",
+];
+
+const ARABIC_TRACK_TERMS = [
+  "عربي",
+  "العربيه",
+  "العربية",
+  "arabic",
+  "ناطقين بغيرها",
+  "لغير الناطقين",
+];
+
 function normalize(value: string) {
   return value
     .toLowerCase()
     .replace(/[\u064B-\u065F\u0670]/g, "")
     .replace(/[أإآ]/g, "ا")
     .replace(/ة/g, "ه");
+}
+
+function textHasAny(haystack: string, terms: string[]) {
+  const normalized = normalize(haystack);
+  return terms.some((term) => normalized.includes(normalize(term)));
+}
+
+/** داخل تخصص اللغات: إنجليزي / عربي / عام */
+export function detectLanguageTrack(text: string): "english" | "arabic" | "general" {
+  const hasEnglish = textHasAny(text, ENGLISH_TRACK_TERMS);
+  const hasArabic = textHasAny(text, ARABIC_TRACK_TERMS);
+  if (hasEnglish && !hasArabic) return "english";
+  if (hasArabic && !hasEnglish) return "arabic";
+  return "general";
+}
+
+function courseLanguageTrack(course: Course): "english" | "arabic" | "other" {
+  const blob = `${course.slug} ${course.title} ${course.summary} ${course.description}`;
+  if (textHasAny(blob, ENGLISH_TRACK_TERMS) || course.slug.includes("english")) return "english";
+  if (textHasAny(blob, ARABIC_TRACK_TERMS) || course.slug.includes("arabic")) return "arabic";
+  return "other";
 }
 
 function getRelevantSpecialtiesFromIntent(intent: string) {
@@ -51,7 +95,21 @@ export function buildInterviewIntentText(
     ? (GOAL_LABELS[profile.answers.goal] ?? profile.answers.goal)
     : "";
   const priorExperience = profile.answers?.priorExperience ?? "";
-  return [conversationText, profile.summary, goalLabel, priorExperience].filter(Boolean).join(" ");
+  const topic = profile.answers?.learningTopic ?? "";
+  const focus = profile.answers?.learningFocus ?? "";
+  return [conversationText, profile.summary, goalLabel, topic, focus, priorExperience]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getInterviewRelevantSpecialties(
+  profile: LearningProfile,
+  intent: string,
+): string[] {
+  if (profile.answers?.specialtyId) {
+    return [profile.answers.specialtyId];
+  }
+  return getRelevantSpecialtiesFromIntent(intent);
 }
 
 function scoreCourseForInterview(
@@ -67,6 +125,21 @@ function scoreCourseForInterview(
   let score = 0;
   const reasons: string[] = [];
 
+  const focusSlug = profile.answers?.learningFocusSlug;
+  const focusTitle = profile.answers?.learningFocus ?? "";
+
+  // مسار التركيز المختار في المقابلة له أولوية قصوى
+  if (focusSlug && course.slug === focusSlug) {
+    score += 30;
+    reasons.push(`يطابق مسار التركيز الذي اخترته: «${focusTitle || course.title}»`);
+  } else if (focusTitle && normalize(course.title).includes(normalize(focusTitle).slice(0, 10))) {
+    score += 18;
+    reasons.push(`قريب من مسار التركيز «${focusTitle}»`);
+  } else if (focusSlug && course.specialtyId === profile.answers?.specialtyId) {
+    // نفس التخصص لكن ليس مسار التركيز — لا تُعامل كمكافئة
+    score -= 6;
+  }
+
   if (relevantSpecialties.length) {
     if (relevantSpecialties.includes(course.specialtyId)) {
       score += 8;
@@ -77,14 +150,57 @@ function scoreCourseForInterview(
     }
   }
 
-  for (const terms of Object.values(DOMAIN_TERMS)) {
-    for (const term of terms) {
-      const normalizedTerm = normalize(term);
-      if (normalizedTerm.length < 3) continue;
-      if (normalizedIntent.includes(normalizedTerm) && normalizedCourse.includes(normalizedTerm)) {
-        score += 4;
-        reasons.push("يطابق موضوع التعلّم الذي ذكرتَه");
-        break;
+  // داخل اللغات: لا ترشّح العربية لمن اختار إنجليزيًا (والعكس)
+  if (course.specialtyId === "languages" || relevantSpecialties.includes("languages")) {
+    const track = detectLanguageTrack(
+      `${intent} ${focusTitle} ${focusSlug ?? ""} ${profile.answers?.learningTopic ?? ""}`,
+    );
+    const courseTrack = courseLanguageTrack(course);
+    if (track === "english" && courseTrack === "arabic") {
+      score -= 40;
+      reasons.push("خارج مسار الإنجليزية الذي طلبتَه");
+    } else if (track === "arabic" && courseTrack === "english") {
+      score -= 40;
+      reasons.push("خارج مسار العربية الذي طلبتَه");
+    } else if (track === "english" && courseTrack === "english") {
+      score += 12;
+      reasons.push("ضمن مسار الإنجليزية الذي اخترته");
+    } else if (track === "arabic" && courseTrack === "arabic") {
+      score += 12;
+      reasons.push("ضمن مسار العربية الذي اخترته");
+    }
+  }
+
+  // مطابقة كلمات أدق من مجرد «لغة»
+  const specificTerms = [
+    ...ENGLISH_TRACK_TERMS,
+    ...ARABIC_TRACK_TERMS,
+    "برمجه",
+    "تصميم",
+    "محاسب",
+    "قانون",
+  ];
+  for (const term of specificTerms) {
+    const normalizedTerm = normalize(term);
+    if (normalizedTerm.length < 3) continue;
+    if (normalizedIntent.includes(normalizedTerm) && normalizedCourse.includes(normalizedTerm)) {
+      score += 5;
+      reasons.push("يطابق موضوع التعلّم الذي ذكرتَه");
+      break;
+    }
+  }
+
+  // تجنّب مكافأة عامة لكل دورات «اللغات» بكلمة لغة فقط عندما يوجد تركيز أدق
+  if (!focusSlug && detectLanguageTrack(intent) === "general") {
+    for (const terms of Object.values(DOMAIN_TERMS)) {
+      for (const term of terms) {
+        const normalizedTerm = normalize(term);
+        if (normalizedTerm.length < 3) continue;
+        if (normalizedIntent.includes(normalizedTerm) && normalizedCourse.includes(normalizedTerm)) {
+          score += 4;
+          reasons.push("يطابق موضوع التعلّم الذي ذكرتَه");
+          break;
+        }
       }
     }
   }
@@ -246,7 +362,7 @@ export function getRecommendedCourses(
   if (!profile) return COURSES.slice(0, limit);
 
   const intent = buildInterviewIntentText(profile, conversationText);
-  const relevantSpecialties = getRelevantSpecialtiesFromIntent(intent);
+  const relevantSpecialties = getInterviewRelevantSpecialties(profile, intent);
   const pool =
     relevantSpecialties.length > 0
       ? COURSES.filter((course) => relevantSpecialties.includes(course.specialtyId))
@@ -271,7 +387,7 @@ export function getScoredInterviewCourses(
   conversationText = "",
 ): Array<{ course: Course; score: number; reason: string }> {
   const intent = buildInterviewIntentText(profile, conversationText);
-  const relevantSpecialties = getRelevantSpecialtiesFromIntent(intent);
+  const relevantSpecialties = getInterviewRelevantSpecialties(profile, intent);
   const pool =
     relevantSpecialties.length > 0
       ? COURSES.filter((course) => relevantSpecialties.includes(course.specialtyId))

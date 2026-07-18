@@ -6,6 +6,7 @@ import { IconArrow, IconLogo, IconSparkle } from "@/components/ui/icons";
 import { ROUTES, SITE } from "@/lib/constants";
 import { formatHoursAndMinutes } from "@/lib/format/duration";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { useWalletOptional } from "@/providers/wallet-provider";
 import { getInterviewService } from "@/services/interview";
@@ -42,7 +43,7 @@ export function WelcomeScreen() {
   }
 
   const firstName = user.fullName.split(" ")[0];
-  const needsInterview = !user.interviewCompleted;
+  const needsInterview = user ? !isInterviewCompleteForUser(user) : true;
 
   return (
     <div className="min-h-screen bg-[#f6f0e7] px-6 py-10 lg:px-14 lg:py-12" dir="rtl">
@@ -102,7 +103,11 @@ export function WelcomeScreen() {
               </Button>
             ) : (
               <>
-                <Button href={ROUTES.courses} size="lg" fullWidth>
+                <Button href={ROUTES.platformHome} size="lg" fullWidth>
+                  انتقل للموقع
+                  <IconArrow />
+                </Button>
+                <Button href={ROUTES.courses} size="lg" fullWidth variant="secondary">
                   استكشف الدورات
                   <IconArrow />
                 </Button>

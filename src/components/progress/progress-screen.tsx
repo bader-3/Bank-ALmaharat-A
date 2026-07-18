@@ -11,12 +11,12 @@ import {
   IconFlame,
   IconTarget,
 } from "@/components/ui/icons";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 import { computeStreak } from "@/lib/goals/streak";
 import { ROUTES } from "@/lib/constants";
 import { cn } from "@/lib/cn";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
-import { useAuth } from "@/providers/auth-provider";
 import { useWallet } from "@/providers/wallet-provider";
 import { getAdaptationService } from "@/services/adaptation";
 import { getGoalsService, toDateKey } from "@/services/goals";
@@ -24,12 +24,10 @@ import { getLearningService } from "@/services/learning";
 import type { ProgressSummary } from "@/types/adaptation";
 import type { Enrollment } from "@/types/learning";
 import type { GoalPlan } from "@/types/goals";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export function ProgressScreen() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   const { isAuthenticated } = useRequireAuth();
   const { stats: walletStats } = useWallet();
   const [loading, setLoading] = useState(true);
@@ -54,13 +52,9 @@ export function ProgressScreen() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void load();
-  }, [user, router, load]);
+  }, [interviewReady, user, load]);
 
   const streakDays = useMemo(() => computeStreak(plan.goals, today), [plan.goals, today]);
   const todayGoals = plan.goals.filter((g) => g.scheduledDate === today);
@@ -68,7 +62,7 @@ export function ProgressScreen() {
   const completedCourses = enrollments.filter((e) => e.progress >= 100).length;
   const activeCourses = enrollments.filter((e) => e.progress < 100).length;
 
-  if (authLoading || !isAuthenticated || !user || loading) {
+  if (authLoading || !isAuthenticated || !user || !interviewReady || loading) {
     return (
       <Container className="py-24">
         <p className="type-body text-center text-foreground-muted">جاري تحميل إنجازاتك…</p>

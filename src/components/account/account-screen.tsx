@@ -19,6 +19,7 @@ import {
   IconWallet,
 } from "@/components/ui/icons";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import { getAiRecommendedCourses } from "@/lib/courses/ai-recommendations";
 import { getCourseBySlug } from "@/lib/courses/mock-data";
 import { formatPrice } from "@/lib/wallet/packages";
@@ -30,9 +31,7 @@ import { useWallet } from "@/providers/wallet-provider";
 import { getFavoritesService } from "@/services/favorites";
 import { getInterviewService } from "@/services/interview";
 import { getLearningService } from "@/services/learning";
-import { readPlanningSession } from "@/services/noor/mock-noor-storage";
-import { getNoorService } from "@/services/noor";
-import { withTimeout } from "@/lib/async/with-timeout";
+import { loadPlanningSessionLocalFirst } from "@/lib/noor/load-planning-session";
 import type { Course } from "@/types/course";
 import type { Enrollment } from "@/types/learning";
 import type { LearningProfile } from "@/types/interview";
@@ -72,39 +71,20 @@ export function AccountScreen() {
     setLoadError("");
 
     try {
-      await withTimeout(
-        (async () => {
-          const userProfile = await getInterviewService().getProfile(userId);
+      const userProfile = await getInterviewService().getProfile(userId);
 
-          const [userEnrollments, favSlugs] = await Promise.all([
-            getLearningService().getEnrollments(userId),
-            getFavoritesService().list(userId),
-          ]);
+      const [userEnrollments, favSlugs, planningSession] = await Promise.all([
+        getLearningService().getEnrollments(userId),
+        getFavoritesService().list(userId),
+        loadPlanningSessionLocalFirst(userId),
+      ]);
 
-          // Local read first — avoids Firestore hanging the account page on mobile.
-          let planningSession = readPlanningSession(userId);
-          if (!planningSession) {
-            try {
-              planningSession = await withTimeout(
-                getNoorService().getPlanningSession(userId),
-                4_000,
-                "مزامنة الخطة",
-              );
-            } catch {
-              planningSession = null;
-            }
-          }
-
-          setProfile(userProfile);
-          setEnrollments(userEnrollments);
-          setFavoriteCourses(
-            favSlugs.map((slug) => getCourseBySlug(slug)).filter((c): c is Course => Boolean(c)),
-          );
-          setApprovedSession(planningSession?.status === "accepted" ? planningSession : null);
-        })(),
-        12_000,
-        "تحميل الحساب",
+      setProfile(userProfile);
+      setEnrollments(userEnrollments);
+      setFavoriteCourses(
+        favSlugs.map((slug) => getCourseBySlug(slug)).filter((c): c is Course => Boolean(c)),
       );
+      setApprovedSession(planningSession?.status === "accepted" ? planningSession : null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "تعذّر تحميل الحساب");
     } finally {
@@ -140,10 +120,29 @@ export function AccountScreen() {
     purchases: [],
   };
 
-  if (isLoading || !isAuthenticated || !user) {
+  if (isLoading) {
     return (
       <Container className="py-24">
         <p className="text-center text-foreground-muted">جاري التحميل…</p>
+      </Container>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
+    return (
+      <Container className="py-24 text-center">
+        <Card padding="lg" className="mx-auto max-w-md border-red-200 bg-red-50">
+          <p className="text-sm font-semibold text-red-800">انتهت جلسة الدخول</p>
+          <p className="mt-2 text-sm text-red-700">
+            لم نتمكن من استعادة حسابك بعد المقابلة. سجّل دخولك مرة أخرى للمتابعة.
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <Button href={ROUTES.login}>تسجيل الدخول</Button>
+            <Button href={ROUTES.register} variant="secondary">
+              إنشاء حساب
+            </Button>
+          </div>
+        </Card>
       </Container>
     );
   }
@@ -176,7 +175,7 @@ export function AccountScreen() {
         </Card>
       )}
 
-      {!user.interviewCompleted && (
+      {!isInterviewCompleteForUser(user) && (
         <Card padding="md" className="mb-8 border-gold-200 bg-gold-50/60">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -430,7 +429,16 @@ export function AccountScreen() {
                 <p className="text-xs font-semibold text-sage-600">ملفك التعليمي</p>
               </div>
               <div className="mt-4">
-                <ProfileSummary profile={profile} showPlan={false} />
+                <ProfileSummary
+                  profile={profile}
+                  showPlan={false}
+                  editable
+                  showNoorServices
+                  onProfileUpdated={(next) => {
+                    setProfile(next);
+                    void load();
+                  }}
+                />
               </div>
             </Card>
           )}

@@ -6,6 +6,7 @@ import { Container } from "@/components/ui/container";
 import { IconArrow } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { useInterviewGate } from "@/hooks/use-interview-gate";
 import { useRequireAuth } from "@/hooks/use-auth-redirect";
 import {
   canCompleteLesson,
@@ -18,7 +19,6 @@ import {
 import { ROUTES } from "@/lib/constants";
 import { formatHoursAndMinutes, hasEnoughHours } from "@/lib/format/duration";
 import { getCourseBySlug, getTrainerById } from "@/lib/courses/mock-data";
-import { useAuth } from "@/providers/auth-provider";
 import { useWallet } from "@/providers/wallet-provider";
 import { getLearningService } from "@/services/learning";
 import type { Enrollment } from "@/types/learning";
@@ -33,7 +33,7 @@ interface LearnScreenProps {
 
 export function LearnScreen({ slug }: LearnScreenProps) {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const { user, authLoading, interviewReady } = useInterviewGate();
   const { balance, refreshWallet } = useWallet();
   useRequireAuth();
 
@@ -55,17 +55,13 @@ export function LearnScreen({ slug }: LearnScreenProps) {
   }, [user, slug]);
 
   useEffect(() => {
-    if (!user) return;
-    if (!user.interviewCompleted) {
-      router.replace(ROUTES.interview);
-      return;
-    }
+    if (!interviewReady || !user) return;
     void loadEnrollment();
-  }, [user, router, loadEnrollment]);
+  }, [interviewReady, user, loadEnrollment]);
 
   if (!course) notFound();
 
-  if (isLoading || !user || enrollment === undefined) {
+  if (authLoading || !user || !interviewReady || enrollment === undefined) {
     return (
       <Container className="py-24">
         <p className="type-body text-center text-foreground-muted">جاري التحميل…</p>

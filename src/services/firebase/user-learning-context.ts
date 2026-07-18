@@ -5,6 +5,7 @@ import { getCloudGoalPlan } from "@/services/firebase/learning-goals";
 import { getCloudLearningPlan } from "@/services/firebase/learning-plans";
 import { getCloudNoorConversation } from "@/services/firebase/noor-conversations";
 import { getCloudUserProfile } from "@/services/firebase/user-profiles";
+import { readLearningProfile } from "@/services/interview/mock-profile-storage";
 import type { WalletStats } from "@/types/account";
 import type { PlanVersion } from "@/types/adaptation";
 import type { Enrollment } from "@/types/learning";
@@ -36,9 +37,11 @@ export async function getNoorUserLearningContext(
       getCloudNoorConversation(userId),
     ]);
 
+  const localProfile = readLearningProfile(userId);
+
   return {
     userId,
-    learningProfile: profile?.learningProfile,
+    learningProfile: localProfile ?? profile?.learningProfile,
     wallet: profile?.wallet,
     planningSession,
     goalPlan: goalPlan ?? undefined,

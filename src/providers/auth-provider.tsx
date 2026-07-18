@@ -1,12 +1,14 @@
 "use client";
 
 import { getAuthService } from "@/services/auth";
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import type { AuthSession, LoginInput, OAuthProvider, RegisterInput, User } from "@/types/auth";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -46,15 +48,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const auth = useMemo(() => getAuthService(), []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true;
 
-    auth.getSession().then((current) => {
-      if (active) {
+    void auth
+      .getSession()
+      .then((current) => {
+        if (!active) return;
         setSession(current);
-        setIsLoading(false);
-      }
-    });
+      })
+      .catch(() => {
+        if (!active) return;
+        setSession(null);
+      })
+      .finally(() => {
+        // Only finish loading for the active effect — Strict Mode cleanup
+        // must not flip isLoading=false while session is still null.
+        if (active) setIsLoading(false);
+      });
 
     return () => {
       active = false;
@@ -71,6 +82,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return sessionsEqual(prev, current) ? prev : current;
     });
   }, [auth]);
+
+  useEffect(() => {
+    function resyncSession() {
+      if (document.visibilityState === "visible") {
+        void refreshSession();
+      }
+    }
+
+    window.addEventListener("focus", resyncSession);
+    document.addEventListener("visibilitychange", resyncSession);
+    return () => {
+      window.removeEventListener("focus", resyncSession);
+      document.removeEventListener("visibilitychange", resyncSession);
+    };
+  }, [refreshSession]);
 
   const register = useCallback(
     async (input: RegisterInput) => {
@@ -110,11 +136,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, [auth]);
 
+  const resolvedUser = useMemo(() => {
+    if (!session?.user) return null;
+    return {
+      ...session.user,
+      interviewCompleted: isInterviewCompleteForUser(session.user),
+    };
+  }, [session]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
-      user: session?.user ?? null,
+      user: resolvedUser,
       isLoading,
-      isAuthenticated: Boolean(session?.user),
+      isAuthenticated: Boolean(resolvedUser),
       register,
       login,
       signInWithGoogle,
@@ -122,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       refreshSession,
     }),
-    [session, isLoading, register, login, signInWithGoogle, signInWithApple, logout, refreshSession],
+    [resolvedUser, isLoading, register, login, signInWithGoogle, signInWithApple, logout, refreshSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

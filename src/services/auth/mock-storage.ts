@@ -53,9 +53,30 @@ function createToken(userId: string) {
   return `mock_${userId}_${Date.now()}`;
 }
 
+export class SessionPersistenceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SessionPersistenceError";
+  }
+}
+
 export function persistSession(session: { user: Omit<StoredUser, "password">; token: string }) {
   if (!isBrowser()) return;
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+
+  const payload = JSON.stringify(session);
+
+  try {
+    window.localStorage.setItem(SESSION_KEY, payload);
+  } catch {
+    throw new SessionPersistenceError(
+      "تعذّر حفظ جلسة الدخول. قد يكون التخزين ممتلئًا — جرّب مسح بيانات الموقع أو متصفحًا آخر.",
+    );
+  }
+
+  const stored = window.localStorage.getItem(SESSION_KEY);
+  if (stored !== payload) {
+    throw new SessionPersistenceError("تعذّر التحقق من جلسة الدخول بعد الحفظ.");
+  }
 }
 
 export function readSession(): { user: Omit<StoredUser, "password">; token: string } | null {
@@ -145,18 +166,46 @@ export function signInOrCreateOAuthUser(provider: OAuthProvider): Omit<StoredUse
 }
 
 export function markInterviewCompleted(userId: string) {
-  const users = readUsers().map((user) =>
-    user.id === userId ? { ...user, interviewCompleted: true } : user,
-  );
-  writeUsers(users);
-
   const session = readSession();
+  let users = readUsers();
+  let target = users.find((user) => user.id === userId);
+
+  if (!target && session?.user.id === userId) {
+    const recovered: StoredUser = {
+      id: session.user.id,
+      fullName: session.user.fullName,
+      email: session.user.email,
+      password: `recovered_${session.user.id}`,
+      createdAt: session.user.createdAt,
+      provider: session.user.provider,
+      interviewCompleted: true,
+    };
+    users = [...users, recovered];
+    target = recovered;
+  } else if (target) {
+    users = users.map((user) =>
+      user.id === userId ? { ...user, interviewCompleted: true } : user,
+    );
+    target = users.find((user) => user.id === userId);
+  }
+
+  if (!target) return;
+
+  writeUsers(
+    users.map((user) => (user.id === userId ? { ...user, interviewCompleted: true } : user)),
+  );
+
+  const publicUser = toPublicUser({ ...target, interviewCompleted: true });
+
   if (session?.user.id === userId) {
     persistSession({
       ...session,
-      user: { ...session.user, interviewCompleted: true },
+      user: publicUser,
     });
+    return;
   }
+
+  createSessionForUser(publicUser);
 }
 
 export function getUserById(userId: string): Omit<StoredUser, "password"> | null {

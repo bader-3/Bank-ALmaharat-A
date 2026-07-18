@@ -13,8 +13,8 @@ interface InterviewShellProps {
 
 const STEPS = [
   {
-    title: "تحدّث بحرّية",
-    description: "أجب بالعربية كما تتحدث — لا نماذج جامدة ولا خانات معقدة.",
+    title: "اختر من المنصة",
+    description: "المجال من تخصصات المنصة فقط — لا نصوص حرّة تُفسِد ملفك.",
     accent: "bg-accent-blue-100 text-accent-blue-600",
   },
   {
@@ -29,7 +29,7 @@ const STEPS = [
   },
   {
     title: "ملفك وتوصياتك",
-    description: "نحوّل المحادثة إلى ملف يقترح مدربين ودورات مناسبة لأهدافك.",
+    description: "نحوّل إجاباتك إلى ملف يقترح مدربين ودورات من نفس مجالك.",
     accent: "bg-accent-blue-100 text-accent-blue-600",
   },
   {
@@ -74,8 +74,8 @@ export function InterviewShell({ eyebrow, title, description, children }: Interv
             ))}
           </div>
 
-          <div dir="rtl" className="order-2 mt-8 lg:col-start-2 lg:row-start-2 lg:mt-8">
-            <Card className="flex min-h-[32rem] flex-col overflow-hidden border-border/60 shadow-sm">
+          <div dir="rtl" className="order-2 mt-8 lg:col-start-2 lg:row-start-2 lg:mt-8 lg:sticky lg:top-6 lg:self-start">
+            <Card className="flex h-[min(40rem,calc(100dvh-7rem))] flex-col overflow-hidden border-border/60 shadow-sm sm:h-[min(42rem,calc(100dvh-6rem))] lg:h-[calc(100dvh-3rem)] lg:max-h-[52rem]">
               {children}
             </Card>
           </div>

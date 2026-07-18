@@ -5,9 +5,21 @@ export type LearningPreference = "recorded" | "live" | "both";
 
 export type InterviewAnswers = {
   goal: string;
+  /** Selected platform specialty id when known. */
+  specialtyId?: string;
+  learningTopic?: string;
+  /** Optional finer path within the specialty. */
+  learningFocus?: string;
+  learningFocusSlug?: string;
   currentLevel: string;
   priorExperience: string;
+  /** Display label — e.g. "20 ساعة" */
   weeklyHours: string;
+  /** Numeric hours chosen by the learner */
+  weeklyHoursNumeric?: number;
+  availableDays?: string[];
+  hoursPerDay?: number;
+  preferredStudyTime?: string;
   learningPreference: LearningPreference;
   budgetOrHours: string;
 };

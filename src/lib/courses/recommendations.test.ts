@@ -78,6 +78,34 @@ describe("توصيات وفلاتر catalog", () => {
     expect(recommendations.length).toBeGreaterThan(0);
     expect(recommendations.every((course) => course.specialtyId === "languages")).toBe(true);
     expect(recommendations.some((course) => course.slug === "english-for-work")).toBe(true);
+    expect(recommendations.every((course) => course.slug !== "arabic-for-non-native")).toBe(true);
+  });
+
+  it("لا يرشّح العربية عندما يكون مسار التركيز إنجليزيًا مهنيًا", () => {
+    const recommendations = getAiRecommendedCourses(
+      profile({
+        answers: {
+          goal: "student",
+          specialtyId: "languages",
+          learningTopic: "اللغات",
+          learningFocus: "إنجليزي مهني للتواصل",
+          learningFocusSlug: "english-for-work",
+          currentLevel: "beginner",
+          priorExperience: "none",
+          weeklyHours: "8 ساعة",
+          weeklyHoursNumeric: 8,
+          learningPreference: "both",
+          budgetOrHours: "10-20h",
+        },
+        summary: "يركّز على إنجليزي مهني للتواصل",
+      }),
+      3,
+    );
+
+    expect(recommendations.some(({ course }) => course.slug === "english-for-work")).toBe(true);
+    expect(recommendations.every(({ course }) => course.slug !== "arabic-for-non-native")).toBe(
+      true,
+    );
   });
 
   it("يعطي fallback ثابتاً لغياب الملف ويحترم حد النتائج", () => {

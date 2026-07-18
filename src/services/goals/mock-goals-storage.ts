@@ -119,6 +119,52 @@ export function replaceWithAcceptedPlan(
   return next;
 }
 
+export function upsertAiGoals(
+  userId: string,
+  acceptedPlanKey: string,
+  acceptedAt: string,
+  goals: LearningGoal[],
+): GoalPlan {
+  const current = getGoalPlan(userId);
+  if (current.acceptedPlanKey === acceptedPlanKey) return current;
+
+  const existingAi = new Map(
+    current.goals
+      .filter((goal) => goal.source === "ai")
+      .map((goal) => [`${goal.courseSlug ?? ""}:${goal.lessonId ?? goal.id}`, goal]),
+  );
+  const nextAiGoals = goals.map((goal) => {
+    const existing = existingAi.get(`${goal.courseSlug ?? ""}:${goal.lessonId ?? goal.id}`);
+    return existing
+      ? {
+          ...goal,
+          completedAt: existing.completedAt,
+        }
+      : goal;
+  });
+  const personalGoals = current.goals.filter((goal) => goal.source === "personal");
+  const next = { acceptedPlanKey, acceptedAt, goals: [...nextAiGoals, ...personalGoals] };
+  savePlan(userId, next);
+  return next;
+}
+
+/** Remove AI/path goals when there are no purchased lessons — keep personal goals. */
+export function clearAiGoals(userId: string): GoalPlan {
+  const current = getGoalPlan(userId);
+  const personalGoals = current.goals.filter((goal) => goal.source === "personal");
+  const hadAi =
+    current.goals.some((goal) => goal.source === "ai") || Boolean(current.acceptedPlanKey);
+  if (!hadAi) return current;
+
+  const next: GoalPlan = {
+    goals: personalGoals,
+    acceptedPlanKey: undefined,
+    acceptedAt: undefined,
+  };
+  savePlan(userId, next);
+  return next;
+}
+
 export function addPersonalGoal(userId: string, input: GoalInput): LearningGoal {
   const plan = getGoalPlan(userId);
   const now = new Date().toISOString();

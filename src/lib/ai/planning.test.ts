@@ -176,13 +176,64 @@ describe("fallback للمساعد", () => {
   it("يوجّه الزائر والملف غير المكتمل بوضوح", () => {
     expect(
       mockAssistantReply("كيف أشتري ساعات؟", { isAuthenticated: false }),
-    ).toContain("/register");
+    ).toContain("التسجيل");
     expect(
       mockAssistantReply("أريد خطة", {
         isAuthenticated: true,
         interviewCompleted: false,
       }),
-    ).toContain("/interview");
+    ).toContain("المقابلة الذكية");
+  });
+
+  it("يجيب عن قدرات نور بدل المحفظة أو الملف", () => {
+    const auth = {
+      isAuthenticated: true,
+      interviewCompleted: true,
+      userContextSummary: "متعلّم مبتدئ يركّز على الإنجليزية المهنية.",
+    };
+    const help = mockAssistantReply("عندي سؤالين وش ممكن تساعديني فيه ؟", auth);
+    expect(help).toContain("أقدر أساعدك");
+    expect(help).toContain("محادثة نور");
+    expect(help).not.toContain("/noor");
+    expect(help).not.toContain("/courses");
+    expect(help).not.toContain("باقة الاستكشاف");
+
+    const services = mockAssistantReply("وش الخدمات الي تقدمينها ؟", auth);
+    expect(services).toContain("أقدر أساعدك");
+    expect(services).not.toContain("حسب سجلك");
+    expect(services).not.toContain("/wallet");
+
+    const name = mockAssistantReply("ليش اسمك نور ؟", auth);
+    expect(name).toContain("اسمي نور");
+  });
+
+  it("يقترح دورات من الملف بدل الرد العام", () => {
+    const auth = {
+      isAuthenticated: true,
+      interviewCompleted: true,
+      learningTopic: "اللغات",
+      specialtyId: "languages",
+      recommendedCourses: [
+        {
+          slug: "english-for-work",
+          title: "الإنجليزية المهنية للتواصل",
+          reason: "تناسب هدفك في التواصل المهني",
+          specialty: "اللغات",
+          levelLabel: "مبتدئ",
+          hours: 12,
+        },
+      ],
+    };
+
+    const suitable = mockAssistantReply("ما الدورة المناسبة لي؟", auth);
+    expect(suitable).toContain("الإنجليزية المهنية للتواصل");
+    expect(suitable).toContain("صفحة دورة");
+    expect(suitable).not.toContain("/courses/");
+    expect(suitable).not.toContain("تصفّح /courses أو اسأل عن مجال");
+
+    const fromProfile = mockAssistantReply("بناء على ملفي", auth);
+    expect(fromProfile).toContain("حسب ملفك");
+    expect(fromProfile).toContain("الإنجليزية المهنية للتواصل");
   });
 
   it("يحافظ على تسلسل المقابلة ولا ينهيها قبل تأكيد المحاور", () => {

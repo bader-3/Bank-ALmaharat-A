@@ -1,5 +1,6 @@
 "use client";
 
+import { isInterviewCompleteForUser } from "@/lib/auth/interview-access";
 import { useAuth } from "@/providers/auth-provider";
 import { ROUTES } from "@/lib/constants";
 
@@ -14,9 +15,9 @@ export function usePrimaryCta() {
     return { href: ROUTES.register, label: "ابدأ رحلتك", ready: true };
   }
 
-  if (!user?.interviewCompleted) {
+  if (!user || !isInterviewCompleteForUser(user)) {
     return { href: ROUTES.interview, label: "أكمل ملفك", ready: true };
   }
 
-  return { href: ROUTES.account, label: "حسابي", ready: true };
+  return { href: ROUTES.platformHome, label: "استكشف المنصة", ready: true };
 }

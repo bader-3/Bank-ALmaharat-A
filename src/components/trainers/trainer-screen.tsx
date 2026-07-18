@@ -39,11 +39,11 @@ export function TrainerScreen({ trainerId }: TrainerScreenProps) {
   return (
     <Container className="py-10 lg:py-14">
       <Link
-        href={ROUTES.courses}
+        href={ROUTES.trainers}
         className="inline-flex items-center gap-1 text-sm text-foreground-secondary transition-colors hover:text-foreground"
       >
         <IconArrow className="rotate-180" />
-        العودة للدورات
+        العودة للمدربين
       </Link>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_18rem] lg:gap-12">

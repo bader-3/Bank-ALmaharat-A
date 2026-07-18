@@ -157,6 +157,15 @@ describe("المحفظة وبدء التعلم", () => {
     expect(result.enrollment.purchasedLessons).toEqual([firstLesson.id]);
     expect(result.enrollment.hoursUsed).toBe(firstLessonHours);
     expect(getWalletBalance("u1")).toBe(0);
+    expect(getGoalPlan("u1").goals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          courseSlug: course.slug,
+          lessonId: firstLesson.id,
+          source: "ai",
+        }),
+      ]),
+    );
   });
 
   it("يشتري الدورة كاملة دفعة واحدة", async () => {

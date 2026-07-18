@@ -326,6 +326,26 @@ function parsePositiveNumber(value: string) {
   return Number.isFinite(number) && number > 0 ? number : undefined;
 }
 
+export function parseWeeklyHoursFromProfileAnswer(value: string): number | undefined {
+  const direct = parsePositiveNumber(value);
+  if (direct && !value.includes("-")) return direct;
+
+  const bucketMap: Record<string, number> = {
+    "1-3": 2,
+    "3-5": 4,
+    "5-10": 7,
+    "10+": 12,
+  };
+  if (bucketMap[value]) return bucketMap[value];
+
+  const range = value.match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (range) {
+    return Math.round(((Number(range[1]) + Number(range[2])) / 2) * 10) / 10;
+  }
+
+  return direct;
+}
+
 export function planningPreferencesFromProfile(
   profile: LearningProfile,
 ): PlanningPreferences {
@@ -350,8 +370,14 @@ export function planningPreferencesFromProfile(
     currentLevel,
     priorExperience: profile.answers.priorExperience,
     knownSkills: profile.suggestedSkills,
-    weeklyHours: parsePositiveNumber(profile.answers.weeklyHours),
+    weeklyHours:
+      profile.answers.weeklyHoursNumeric ??
+      parseWeeklyHoursFromProfileAnswer(profile.answers.weeklyHours),
     durationWeeks: profile.learningPlan?.totalWeeks,
+    availableDays: profile.answers.availableDays,
+    preferredTimes: profile.answers.preferredStudyTime
+      ? [profile.answers.preferredStudyTime]
+      : undefined,
     deliveryModes:
       learningPreference === "both"
         ? ["recorded", "live"]
