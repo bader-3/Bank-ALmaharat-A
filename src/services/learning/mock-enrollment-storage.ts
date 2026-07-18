@@ -67,6 +67,25 @@ function writeAll(enrollments: Enrollment[]) {
 export function replaceUserEnrollments(userId: string, items: Enrollment[]) {
   const others = readAll().filter((item) => item.userId !== userId);
   writeAll([...others, ...items]);
+
+  // writeAll لا يرسل مستخدمًا بلا تسجيلات — لازم نفرّغ السحابة صراحةً
+  if (items.length === 0 && isBrowser()) {
+    void saveCloudEnrollments(userId, []).catch((error) => {
+      logFirestoreError("enrollments", error);
+    });
+  }
+}
+
+/** نفس الاستبدال مع انتظار حفظ السحابة (مهم للحساب التجريبي). */
+export async function replaceUserEnrollmentsAsync(userId: string, items: Enrollment[]) {
+  const others = readAll().filter((item) => item.userId !== userId);
+  if (!isBrowser()) return;
+  window.localStorage.setItem(ENROLLMENTS_KEY, JSON.stringify([...others, ...items]));
+  try {
+    await saveCloudEnrollments(userId, items);
+  } catch (error) {
+    logFirestoreError("enrollments", error);
+  }
 }
 
 function createId() {

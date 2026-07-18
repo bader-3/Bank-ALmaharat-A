@@ -53,7 +53,7 @@ export function LoginForm() {
     setFormError("");
     setIsDemoLoading(true);
     try {
-      seedDemoAccount();
+      await seedDemoAccount();
       await refreshSession();
       router.push(ROUTES.interview);
     } catch {

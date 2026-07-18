@@ -3,6 +3,7 @@ import { withoutUndefined } from "@/services/firebase/common";
 import type { WalletStats } from "@/types/account";
 import type { LearningProfile } from "@/types/interview";
 import {
+  deleteField,
   doc,
   getDoc,
   serverTimestamp,
@@ -38,7 +39,7 @@ export async function getCloudUserProfile(
 
 async function mergeUserProfile(
   userId: string,
-  fields: Partial<Omit<CloudUserProfile, "userId">>,
+  fields: Partial<Omit<CloudUserProfile, "userId">> | Record<string, unknown>,
 ) {
   await setDoc(
     profileRef(userId),
@@ -57,4 +58,17 @@ export function saveCloudLearningProfile(profile: LearningProfile) {
 
 export function saveCloudWallet(userId: string, wallet: WalletStats) {
   return mergeUserProfile(userId, { wallet });
+}
+
+/** يمسح الملف التعليمي من السحابة (لا يكفي الحذف المحلي بسبب المزامنة cloud-first). */
+export async function clearCloudLearningProfile(userId: string) {
+  await setDoc(
+    profileRef(userId),
+    {
+      userId,
+      learningProfile: deleteField(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
 }

@@ -18,7 +18,7 @@ export function HeroActions() {
   async function handleDemoLogin() {
     setIsDemoLoading(true);
     try {
-      seedDemoAccount();
+      await seedDemoAccount();
       await refreshSession();
       router.push(ROUTES.interview);
     } catch {

@@ -11,6 +11,14 @@ import {
   resetInterviewCompletion,
 } from "@/services/auth/mock-storage";
 import { getFavoriteSlugs, isFavorite, removeFavorite, toggleFavorite } from "@/services/favorites/mock-favorites-storage";
+import { saveCloudEnrollments } from "@/services/firebase/enrollments";
+import { deleteCloudGoalPlan, saveCloudGoalPlan } from "@/services/firebase/learning-goals";
+import { deleteCloudLearningPlan } from "@/services/firebase/learning-plans";
+import { deleteCloudNoorConversation } from "@/services/firebase/noor-conversations";
+import {
+  clearCloudLearningProfile,
+  saveCloudWallet,
+} from "@/services/firebase/user-profiles";
 import { toDateKey } from "@/services/goals";
 import {
   replaceGoalPlanGoals,
@@ -26,14 +34,20 @@ import {
   createEnrollmentWithLessons,
   getEnrollmentsForUser,
   replaceUserEnrollments,
+  replaceUserEnrollmentsAsync,
 } from "@/services/learning/mock-enrollment-storage";
 import {
   deleteNoorConversation,
   deletePlanningSession,
   writePlanningSession,
 } from "@/services/noor/mock-noor-storage";
-import { writeReviewSession } from "@/services/review/mock-review-storage";
-import { addHours, getWalletBalance, reconcileWalletWithEnrollments } from "@/services/wallet/mock-wallet-storage";
+import { clearReviewSessionsForUser, writeReviewSession } from "@/services/review/mock-review-storage";
+import {
+  addHours,
+  getWalletBalance,
+  reconcileWalletWithEnrollments,
+  resetWalletForUser,
+} from "@/services/wallet/mock-wallet-storage";
 import type { Course, CourseLevel } from "@/types/course";
 import type { LearningGoal } from "@/types/goals";
 import type { LearningProfile } from "@/types/interview";
@@ -49,6 +63,8 @@ export const DEMO_ACCOUNT = {
 
 const DEMO_WALLET_HOURS = 32;
 const STREAK_DAYS = 7;
+const DEMO_LOCAL_AUTHORITY_KEY = "asb-demo-local-authority";
+const DEMO_LOCAL_AUTHORITY_TTL_MS = 10 * 60 * 1000;
 
 const FALLBACK_SLUGS = ["learning-habits", "english-for-work", "public-speaking"] as const;
 
@@ -57,6 +73,24 @@ function toCourseLevel(value: string | undefined): CourseLevel {
     return value;
   }
   return "intermediate";
+}
+
+/** يمنع السحابة من إعادة بيانات قديمة بعد مسح/تجهيز الحساب التجريبي. */
+export function markDemoLocalAuthority(userId: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(
+    `${DEMO_LOCAL_AUTHORITY_KEY}:${userId}`,
+    String(Date.now()),
+  );
+}
+
+export function hasDemoLocalAuthority(userId: string): boolean {
+  if (typeof window === "undefined") return false;
+  const raw = window.sessionStorage.getItem(`${DEMO_LOCAL_AUTHORITY_KEY}:${userId}`);
+  if (!raw) return false;
+  const stamped = Number(raw);
+  if (!Number.isFinite(stamped)) return false;
+  return Date.now() - stamped < DEMO_LOCAL_AUTHORITY_TTL_MS;
 }
 
 function daysAgoKey(daysAgo: number) {
@@ -132,7 +166,6 @@ function enrollCourse(
   };
 }
 
-/** يختار دورات العرض من ملف المقابلة الحقيقي، مع احتياطي من الكتالوج. */
 function resolveDemoCourseSlugs(profile: LearningProfile | null): [string, string, string] {
   const fromProfile: string[] = [];
 
@@ -154,8 +187,8 @@ function resolveDemoCourseSlugs(profile: LearningProfile | null): [string, strin
   return [merged[0], merged[1] ?? merged[0], merged[2] ?? merged[1] ?? merged[0]];
 }
 
-function seedEnrollments(userId: string, slugs: [string, string, string]) {
-  replaceUserEnrollments(userId, []);
+async function seedEnrollments(userId: string, slugs: [string, string, string]) {
+  await replaceUserEnrollmentsAsync(userId, []);
 
   const completedCourse = getCourseBySlug(slugs[0]);
   const activeCourse = getCourseBySlug(slugs[1]);
@@ -181,6 +214,7 @@ function seedEnrollments(userId: string, slugs: [string, string, string]) {
     startedDaysAgo: 4,
   });
 
+  await saveCloudEnrollments(userId, getEnrollmentsForUser(userId));
   return { completed, active, second };
 }
 
@@ -188,6 +222,7 @@ function seedReviews(
   userId: string,
   bundles: Array<{ course: Course; completed: Lesson[] }>,
 ) {
+  clearReviewSessionsForUser(userId);
   let offset = 2;
   for (const bundle of bundles) {
     for (const lesson of bundle.completed.slice(0, 3)) {
@@ -381,6 +416,9 @@ function seedGoalsAndPlan(
 }
 
 function seedFavorites(userId: string, slugs: string[]) {
+  for (const slug of getFavoriteSlugs(userId)) {
+    removeFavorite(userId, slug);
+  }
   for (const slug of slugs) {
     if (getCourseBySlug(slug) && !isFavorite(userId, slug)) {
       toggleFavorite(userId, slug);
@@ -393,14 +431,43 @@ export function isDemoAccountEmail(email: string | undefined | null): boolean {
   return email.trim().toLowerCase() === DEMO_ACCOUNT.email;
 }
 
+async function purgeDemoProgressLocalAndCloud(userId: string) {
+  clearLearningProfile(userId);
+  clearInterviewConversation(userId);
+  clearReviewSessionsForUser(userId);
+  replaceGoalPlanGoals(userId, []);
+  deletePlanningSession(userId);
+  deleteNoorConversation(userId);
+  resetWalletForUser(userId);
+  for (const slug of getFavoriteSlugs(userId)) {
+    removeFavorite(userId, slug);
+  }
+
+  await replaceUserEnrollmentsAsync(userId, []);
+
+  const emptyWallet = resetWalletForUser(userId);
+  await Promise.allSettled([
+    clearCloudLearningProfile(userId),
+    saveCloudWallet(userId, emptyWallet),
+    deleteCloudGoalPlan(userId),
+    deleteCloudLearningPlan(userId),
+    deleteCloudNoorConversation(userId),
+    saveCloudEnrollments(userId, []),
+    saveCloudGoalPlan(userId, { goals: [] }),
+  ]);
+
+  markDemoLocalAuthority(userId);
+}
+
 /**
  * المرحلة 1: حساب تجريبي على باب مقابلة نور (كأنه مستخدم جديد).
+ * يمسح محليًا + سحابة حتى لا ترجع الدورات المشتراة سابقًا.
  */
-export function seedDemoAccount(): {
+export async function seedDemoAccount(): Promise<{
   email: string;
   password: string;
   userId: string;
-} {
+}> {
   clearOnboardingTourStorage();
 
   const existing = findUserByEmail(DEMO_ACCOUNT.email);
@@ -419,15 +486,7 @@ export function seedDemoAccount(): {
     createSessionForUser(created);
   }
 
-  clearLearningProfile(userId);
-  clearInterviewConversation(userId);
-  replaceUserEnrollments(userId, []);
-  replaceGoalPlanGoals(userId, []);
-  deletePlanningSession(userId);
-  deleteNoorConversation(userId);
-  for (const slug of getFavoriteSlugs(userId)) {
-    removeFavorite(userId, slug);
-  }
+  await purgeDemoProgressLocalAndCloud(userId);
 
   const finalUser = getUserById(userId);
   if (finalUser) {
@@ -446,16 +505,15 @@ export function seedDemoAccount(): {
 }
 
 /**
- * المرحلة 2: بعد إنهاء المقابلة والضغط على «انتقل للموقع».
- * يبقي ملف نور كما بَنَته المقابلة، ويضيف فوقه تقدّمًا وإنجازات للعرض.
+ * المرحلة 2: بعد إنهاء المقابلة — ملف نور + إنجازات عرض جاهزة.
  */
-export function enrichDemoAccountAfterInterview(userId: string): void {
+export async function enrichDemoAccountAfterInterview(userId: string): Promise<void> {
   const profile = readLearningProfile(userId);
   const slugs = resolveDemoCourseSlugs(profile);
 
   ensureWallet(userId);
 
-  const { completed, active, second } = seedEnrollments(userId, slugs);
+  const { completed, active, second } = await seedEnrollments(userId, slugs);
 
   const enrolledHours = getEnrollmentsForUser(userId).reduce(
     (sum, enrollment) => sum + enrollment.hoursUsed,
@@ -476,7 +534,6 @@ export function enrichDemoAccountAfterInterview(userId: string): void {
   ]);
 
   seedFavorites(userId, slugs);
-
-  // يبقى الترحيب والجولة التعريفية لأول دخول بعد المقابلة
+  markDemoLocalAuthority(userId);
   clearOnboardingTourStorage();
 }

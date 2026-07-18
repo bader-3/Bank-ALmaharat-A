@@ -146,7 +146,7 @@ export function InterviewChat() {
 
       // الحساب التجريبي: الملف من المقابلة + إنجازات جاهزة للعرض بعد الدخول
       if (isDemoAccountEmail(user.email)) {
-        enrichDemoAccountAfterInterview(user.id);
+        await enrichDemoAccountAfterInterview(user.id);
       }
 
       const specialtyId = savedProfile.answers.specialtyId;

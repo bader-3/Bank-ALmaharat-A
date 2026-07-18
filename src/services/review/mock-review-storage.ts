@@ -54,6 +54,15 @@ export function listReviewSessions(userId: string): LessonReviewSession[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+export function clearReviewSessionsForUser(userId: string) {
+  const store = readStore();
+  const nextSessions = Object.fromEntries(
+    Object.entries(store.sessions).filter(([, session]) => session.ownerId !== userId),
+  );
+  if (Object.keys(nextSessions).length === Object.keys(store.sessions).length) return;
+  writeStore({ schemaVersion: 1, sessions: nextSessions });
+}
+
 export function subscribeToReviewChanges(callback: () => void) {
   if (!isBrowser()) return () => undefined;
   window.addEventListener(REVIEW_CHANGED_EVENT, callback);

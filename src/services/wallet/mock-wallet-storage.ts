@@ -154,3 +154,10 @@ export function reconcileWalletWithEnrollments(userId: string, enrolledHours: nu
   saveUserStats(userId, next);
   return next;
 }
+
+/** يصفّر محفظة المستخدم (للعرض التجريبي من الصفر). */
+export function resetWalletForUser(userId: string): WalletStats {
+  const next = emptyStats();
+  saveUserStats(userId, next);
+  return next;
+}
