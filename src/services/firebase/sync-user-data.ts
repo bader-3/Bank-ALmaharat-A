@@ -13,6 +13,7 @@ import {
   saveCloudLearningProfile,
   saveCloudWallet,
 } from "@/services/firebase/user-profiles";
+import { hasDemoLocalAuthority } from "@/services/demo/seed-demo-account";
 import { getGoalPlan } from "@/services/goals/mock-goals-storage";
 import {
   readInterviewConversation,
@@ -77,14 +78,20 @@ function writeInterviewConversationsLocal(store: Record<string, unknown>) {
 /**
  * Pulls cloud data into localStorage (cloud-first) and uploads any local-only
  * records that do not yet exist in Firestore.
+ * بعد مسح الحساب التجريبي: نرفع المحلي ولا نستورد البيانات القديمة من السحابة.
  */
 export async function syncUserDataFromCloud(userId: string) {
   if (typeof window === "undefined" || !userId || userId === "guest") return;
 
+  const preferLocalDemo = hasDemoLocalAuthority(userId);
+
   try {
     const cloudProfile = await getCloudUserProfile(userId);
     const localProfile = readLearningProfile(userId);
-    if (cloudProfile?.learningProfile) {
+    if (preferLocalDemo) {
+      if (localProfile) await saveCloudLearningProfile(localProfile);
+      await saveCloudWallet(userId, getWalletStats(userId));
+    } else if (cloudProfile?.learningProfile) {
       const profiles = readProfilesStore();
       profiles[userId] = cloudProfile.learningProfile;
       writeProfilesStore(profiles);
@@ -92,27 +99,33 @@ export async function syncUserDataFromCloud(userId: string) {
       await saveCloudLearningProfile(localProfile);
     }
 
-    const localWallet = getWalletStats(userId);
-    if (cloudProfile?.wallet) {
-      const store = JSON.parse(window.localStorage.getItem("asb-wallet") ?? "{}") as Record<
-        string,
-        unknown
-      >;
-      store[userId] = cloudProfile.wallet;
-      window.localStorage.setItem("asb-wallet", JSON.stringify(store));
-      window.dispatchEvent(new CustomEvent("asb-wallet-changed"));
-    } else if (localWallet.balance || localWallet.totalPurchased || localWallet.totalUsed) {
-      await saveCloudWallet(userId, localWallet);
+    if (!preferLocalDemo) {
+      const localWallet = getWalletStats(userId);
+      if (cloudProfile?.wallet) {
+        const store = JSON.parse(window.localStorage.getItem("asb-wallet") ?? "{}") as Record<
+          string,
+          unknown
+        >;
+        store[userId] = cloudProfile.wallet;
+        window.localStorage.setItem("asb-wallet", JSON.stringify(store));
+        window.dispatchEvent(new CustomEvent("asb-wallet-changed"));
+      } else if (localWallet.balance || localWallet.totalPurchased || localWallet.totalUsed) {
+        await saveCloudWallet(userId, localWallet);
+      }
     }
 
     const cloudPlan = await getCloudLearningPlan(userId);
     const localPlan = readPlanningSession(userId);
-    if (cloudPlan) writePlanningSession(cloudPlan);
+    if (preferLocalDemo) {
+      if (localPlan) await saveCloudLearningPlan(localPlan);
+    } else if (cloudPlan) writePlanningSession(cloudPlan);
     else if (localPlan) await saveCloudLearningPlan(localPlan);
 
     const cloudGoals = await getCloudGoalPlan(userId);
     const localGoals = getGoalPlan(userId);
-    if (cloudGoals) {
+    if (preferLocalDemo) {
+      await saveCloudGoalPlan(userId, localGoals);
+    } else if (cloudGoals) {
       const store = JSON.parse(window.localStorage.getItem("asb-goals") ?? "{}") as Record<
         string,
         unknown
@@ -125,8 +138,13 @@ export async function syncUserDataFromCloud(userId: string) {
 
     const cloudEnrollments = await getCloudEnrollments(userId);
     const localEnrollments = getEnrollmentsForUser(userId);
-    if (cloudEnrollments.length) replaceUserEnrollments(userId, cloudEnrollments);
-    else if (localEnrollments.length) await saveCloudEnrollments(userId, localEnrollments);
+    if (preferLocalDemo) {
+      await saveCloudEnrollments(userId, localEnrollments);
+    } else if (cloudEnrollments.length) {
+      replaceUserEnrollments(userId, cloudEnrollments);
+    } else if (localEnrollments.length) {
+      await saveCloudEnrollments(userId, localEnrollments);
+    }
 
     const cloudAdaptation = await getCloudAdaptationState(userId);
     const localAdaptation = readAdaptationStore()[userId];
@@ -140,12 +158,16 @@ export async function syncUserDataFromCloud(userId: string) {
 
     const cloudConversation = await getCloudNoorConversation(userId);
     const localConversation = readNoorConversation(userId);
-    if (cloudConversation) writeNoorConversation(userId, cloudConversation.messages);
+    if (preferLocalDemo) {
+      if (localConversation) await saveCloudNoorConversation(localConversation);
+    } else if (cloudConversation) writeNoorConversation(userId, cloudConversation.messages);
     else if (localConversation) await saveCloudNoorConversation(localConversation);
 
     const cloudInterview = await getCloudInterviewConversation(userId);
     const localInterview = readInterviewConversation(userId);
-    if (cloudInterview) {
+    if (preferLocalDemo) {
+      if (localInterview) await saveCloudInterviewConversation(localInterview);
+    } else if (cloudInterview) {
       const store = readInterviewConversationsLocal();
       store[userId] = cloudInterview;
       writeInterviewConversationsLocal(store);
